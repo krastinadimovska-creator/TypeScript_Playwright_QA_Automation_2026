@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: "lectures/01-playwright/tests",
+  testDir: "lectures",
   timeout: 30_000,
   reporter: [["html", { open: "never" }]],
   use: {
