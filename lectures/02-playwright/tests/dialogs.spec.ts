@@ -10,22 +10,27 @@ test.beforeEach(async ({ page }) => {
 	await page.goto(dialogsPageUrl, { waitUntil: 'domcontentloaded' });
 });
 
-test('accepts an alert', async ({ page }) => {
+test.only('accepts an alert', async ({ page }) => {
 	let dialogType = '';
 	let dialogMessage = '';
 	// Register the handler BEFORE triggering the dialog.
 	page.once('dialog', async (dialog) => {
+		await page.waitForTimeout(1000);
 		dialogType = dialog.type();
 		dialogMessage = dialog.message();
 		await dialog.accept();
 	});
 
+	// CSS: '#show-alert'   XPath: '//button[@id="show-alert"]'
+	// SAME: every button on this page has a meaningful ID that matches its action. Prefer the ID
+	// when the button text is translated or reworded; prefer the role when the text is stable.
 	await page.getByRole('button', { name: 'Show alert' }).click();
-
 	await expect(page.locator('#alert-result')).toHaveText('Alert closed.');
 	expect(dialogType).toBe('alert');
 	expect(dialogMessage).toBe('Welcome to Form & Field!');
 });
+
+
 
 test('cancels a deletion by dismissing the confirm', async ({ page }) => {
 	let dialogType = '';
@@ -34,6 +39,7 @@ test('cancels a deletion by dismissing the confirm', async ({ page }) => {
 		await dialog.dismiss();
 	});
 
+	// CSS: '#show-confirm'   XPath: '//button[@id="show-confirm"]' - SAME, see the note above.
 	await page.getByRole('button', { name: 'Delete saved item' }).click();
 
 	await expect(page.locator('#confirm-result')).toHaveText('Deletion cancelled.');
@@ -42,6 +48,7 @@ test('cancels a deletion by dismissing the confirm', async ({ page }) => {
 });
 
 test('deletes the item by accepting the confirm', async ({ page }) => {
+	// Register before clicking so the confirmation dialog is accepted.
 	page.once('dialog', (dialog) => dialog.accept());
 
 	await page.getByRole('button', { name: 'Delete saved item' }).click();
@@ -60,6 +67,7 @@ test('enters a name in the prompt', async ({ page }) => {
 		await dialog.accept('Taylor');
 	});
 
+	// CSS: '#show-prompt'   XPath: '//button[@id="show-prompt"]' - SAME, see the note above.
 	await page.getByRole('button', { name: 'Enter your name' }).click();
 
 	await expect(page.locator('#prompt-result')).toHaveText('Hello, Taylor!');

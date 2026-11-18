@@ -4,5 +4,7 @@
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   },
-  "scripts": {}
+  "scripts": {
+    "test:pom-login": "playwright test lectures/03-pom/tests/login.spec.ts --headed"
+  }
 }

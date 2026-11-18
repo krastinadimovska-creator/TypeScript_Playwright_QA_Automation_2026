@@ -15,7 +15,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('uploads a single resume', async ({ page }) => {
-	// Alternative: page.getByLabel('Resume')
+	// Label alternative: getByLabel('Resume')   XPath: '//input[@id="resume"]'
+	// SAME: file inputs are often visually hidden behind a custom "Browse" button, and
+	// setInputFiles() still works on them. A stable ID is a common, reliable hook for uploads.
 	await page.locator('#resume').setInputFiles(resumeFile);
 	await expect(page.locator('#resume-result')).toHaveText(
 		/^Selected resume: resume\.txt \(\d+ bytes\)\.$/,
@@ -23,6 +25,7 @@ test('uploads a single resume', async ({ page }) => {
 });
 
 test('replaces the selected resume', async ({ page }) => {
+	// CSS: '#resume' - SAME, see the first test.
 	const resume = page.getByLabel('Resume');
 	await resume.setInputFiles(resumeFile);
 	await resume.setInputFiles(portfolioFile);
@@ -40,6 +43,7 @@ test('clears the resume with setInputFiles', async ({ page }) => {
 });
 
 test('clears the resume with the clear button', async ({ page }) => {
+	// Button - CSS: '#clear-resume'   XPath: '//button[@id="clear-resume"]' - SAME, stable ID.
 	await page.getByLabel('Resume').setInputFiles(resumeFile);
 	await page.getByRole('button', { name: 'Clear resume' }).click();
 
@@ -47,6 +51,11 @@ test('clears the resume with the clear button', async ({ page }) => {
 });
 
 test('uploads multiple documents', async ({ page }) => {
+	// Input - CSS: '#documents'   XPath: '//input[@id="documents"]'
+	// SAME element. getByLabel needs exact: true here: without it, "Documents" also matches the
+	// list labelled "Selected documents" (label matching is a case-insensitive substring match).
+	// List - CSS: '#documents-list li' (used in the next test)   XPath: '//ul[@id="documents-list"]/li'
+	// SAME items. The role version reads well; the CSS version is shorter.
 	await page.getByLabel('Documents', { exact: true }).setInputFiles([portfolioFile, referenceFile]);
 
 	await expect(page.locator('#documents-result')).toHaveText('2 documents selected.');
@@ -67,6 +76,7 @@ test('uploads an in-memory file', async ({ page }) => {
 });
 
 test('clears all documents', async ({ page }) => {
+	// CSS: '#documents', '#clear-documents' - SAME, stable IDs.
 	await page.getByLabel('Documents', { exact: true }).setInputFiles([portfolioFile, referenceFile]);
 	await page.getByRole('button', { name: 'Clear documents' }).click();
 
