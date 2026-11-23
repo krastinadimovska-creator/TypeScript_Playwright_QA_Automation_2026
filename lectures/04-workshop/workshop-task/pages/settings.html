@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Settings | EventHub</title>
+	<link rel="stylesheet" href="../../../02-playwright/pages/styles.css">
+	<link rel="stylesheet" href="app.css">
+	<script src="app.js"></script>
+</head>
+<body>
+	<header class="site-header">
+		<span class="brand">EventHub.</span>
+		<nav aria-label="Main">
+			<a href="profile.html">Profile</a>
+			<a href="registration.html">Registration</a>
+			<a href="attendees.html">Attendees</a>
+			<a href="settings.html">Settings</a>
+		</nav>
+		<span id="current-user" class="muted"></span>
+	</header>
+
+	<main>
+		<p class="eyebrow">Account</p>
+		<h1>Settings</h1>
+		<div class="actions">
+			<button id="expand-all" type="button" class="secondary small">Expand all</button>
+			<button id="collapse-all" type="button" class="secondary small">Collapse all</button>
+		</div>
+
+		<!-- Accordion pattern: h2 > button[aria-expanded][aria-controls] + region panel -->
+		<section class="accordion" data-section="notifications">
+			<h2><button id="notifications-trigger" class="accordion-trigger" type="button" aria-expanded="true" aria-controls="notifications-panel">Notifications</button></h2>
+			<form id="notifications-panel" class="accordion-panel" role="region" aria-labelledby="notifications-trigger">
+				<fieldset>
+					<legend>Notify me by</legend>
+					<label class="choice"><input id="notify-email" type="checkbox" name="email"> Email</label>
+					<label class="choice"><input id="notify-sms" type="checkbox" name="sms"> SMS</label>
+					<label class="choice"><input id="notify-push" type="checkbox" name="push"> Push notifications</label>
+				</fieldset>
+				<label for="digest">Digest frequency</label>
+				<select id="digest" name="digest">
+					<option>Never</option>
+					<option>Daily</option>
+					<option>Weekly</option>
+					<option>Monthly</option>
+				</select>
+				<p class="hint">Digest emails need the Email option.</p>
+				<div class="actions">
+					<button type="submit">Save notifications</button>
+					<span class="unsaved" hidden>Unsaved changes</span>
+				</div>
+				<p class="status" role="status" hidden></p>
+			</form>
+		</section>
+
+		<section class="accordion" data-section="privacy">
+			<h2><button id="privacy-trigger" class="accordion-trigger" type="button" aria-expanded="false" aria-controls="privacy-panel">Privacy</button></h2>
+			<form id="privacy-panel" class="accordion-panel" role="region" aria-labelledby="privacy-trigger" hidden>
+				<fieldset>
+					<legend>Profile visibility</legend>
+					<label class="choice"><input type="radio" name="visibility" value="Public"> Public</label>
+					<label class="choice"><input type="radio" name="visibility" value="Attendees only"> Attendees only</label>
+					<label class="choice"><input type="radio" name="visibility" value="Private"> Private</label>
+				</fieldset>
+				<p><label class="choice"><input id="show-email" type="checkbox" name="showEmail"> Show my email to other attendees</label></p>
+				<p><label class="choice"><input id="allow-photos" type="checkbox" name="allowPhotos"> Allow photos of me at events</label></p>
+				<p class="hint">A private profile never shows your email.</p>
+				<div class="actions">
+					<button type="submit">Save privacy</button>
+					<span class="unsaved" hidden>Unsaved changes</span>
+				</div>
+				<p class="status" role="status" hidden></p>
+			</form>
+		</section>
+
+		<section class="accordion" data-section="appearance">
+			<h2><button id="appearance-trigger" class="accordion-trigger" type="button" aria-expanded="false" aria-controls="appearance-panel">Appearance</button></h2>
+			<form id="appearance-panel" class="accordion-panel" role="region" aria-labelledby="appearance-trigger" hidden>
+				<fieldset>
+					<legend>Theme</legend>
+					<label class="choice"><input type="radio" name="theme" value="Light"> Light</label>
+					<label class="choice"><input type="radio" name="theme" value="Dark"> Dark</label>
+					<label class="choice"><input type="radio" name="theme" value="System"> System</label>
+				</fieldset>
+				<div class="grid">
+					<div>
+						<label for="language">Language</label>
+						<select id="language" name="language">
+							<option>English</option>
+							<option>Bulgarian</option>
+							<option>German</option>
+							<option>Spanish</option>
+						</select>
+					</div>
+					<div>
+						<label for="font-size">Font size</label>
+						<select id="font-size" name="fontSize">
+							<option>Small</option>
+							<option>Medium</option>
+							<option>Large</option>
+						</select>
+					</div>
+				</div>
+				<div class="actions">
+					<button type="submit">Save appearance</button>
+					<span class="unsaved" hidden>Unsaved changes</span>
+				</div>
+				<p class="status" role="status" hidden></p>
+			</form>
+		</section>
+
+		<section class="accordion" data-section="account">
+			<h2><button id="account-trigger" class="accordion-trigger" type="button" aria-expanded="false" aria-controls="account-panel">Account</button></h2>
+			<form id="account-panel" class="accordion-panel" role="region" aria-labelledby="account-trigger" novalidate hidden>
+				<div class="grid">
+					<div>
+						<label for="display-name">Display name</label>
+						<input id="display-name" name="displayName">
+						<p id="display-name-error" class="field-error" hidden></p>
+					</div>
+					<div>
+						<label for="time-zone">Time zone</label>
+						<select id="time-zone" name="timeZone">
+							<option>Europe/Sofia</option>
+							<option>Europe/Berlin</option>
+							<option>Europe/London</option>
+							<option>America/New_York</option>
+						</select>
+					</div>
+				</div>
+				<div class="actions">
+					<button type="submit">Save account</button>
+					<span class="unsaved" hidden>Unsaved changes</span>
+				</div>
+				<p class="status" role="status" hidden></p>
+
+				<h3>Danger zone</h3>
+				<p><label class="choice"><input id="confirm-delete" type="checkbox"> I understand that deleting my account cannot be undone</label></p>
+				<button id="delete-account" type="button" class="danger" disabled>Delete account</button>
+				<p id="delete-status" class="error" role="alert" hidden></p>
+			</form>
+		</section>
+	</main>
+	<footer>EventHub / Workshop exercise app. Data lives only in this browser tab.</footer>
+
+	<script>
+		EventHub.renderHeader();
+
+		const DEFAULT_SETTINGS = {
+			notifications: { email: true, sms: false, push: false, digest: 'Weekly' },
+			privacy: { visibility: 'Attendees only', showEmail: false, allowPhotos: true },
+			appearance: { theme: 'Light', language: 'English', fontSize: 'Medium' },
+			account: { displayName: 'Alex M.', timeZone: 'Europe/Sofia' },
+		};
+		const MESSAGES = {
+			notifications: 'Notification settings saved.',
+			privacy: 'Privacy settings saved.',
+			appearance: 'Appearance settings saved.',
+			account: 'Account settings saved.',
+		};
+		const field = (id) => document.getElementById(id);
+		let settings = EventHub.load('settings', DEFAULT_SETTINGS);
+		const triggers = [...document.querySelectorAll('.accordion-trigger')];
+
+		// ---- Accordion ----
+		function setExpanded(trigger, expanded) {
+			trigger.setAttribute('aria-expanded', String(expanded));
+			field(trigger.getAttribute('aria-controls')).hidden = !expanded;
+		}
+		triggers.forEach((t) => t.addEventListener('click', () => setExpanded(t, t.getAttribute('aria-expanded') !== 'true')));
+		field('expand-all').addEventListener('click', () => triggers.forEach((t) => setExpanded(t, true)));
+		field('collapse-all').addEventListener('click', () => triggers.forEach((t) => setExpanded(t, false)));
+
+		// ---- Rules between controls ----
+		function applyRules() {
+			field('digest').disabled = !field('notify-email').checked;
+			const isPrivate = document.querySelector('[name="visibility"]:checked')?.value === 'Private';
+			field('show-email').disabled = isPrivate;
+			if (isPrivate) field('show-email').checked = false;
+			field('delete-account').disabled = !field('confirm-delete').checked;
+		}
+
+		// ---- Read / write each form ----
+		function fillForm(section) {
+			const form = field(`${section}-panel`);
+			for (const [name, value] of Object.entries(settings[section])) {
+				const inputs = form.querySelectorAll(`[name="${name}"]`);
+				inputs.forEach((input) => {
+					if (input.type === 'checkbox') input.checked = value;
+					else if (input.type === 'radio') input.checked = input.value === value;
+					else input.value = value;
+				});
+			}
+		}
+
+		function readForm(section) {
+			const form = field(`${section}-panel`);
+			const data = {};
+			for (const name of Object.keys(DEFAULT_SETTINGS[section])) {
+				const inputs = [...form.querySelectorAll(`[name="${name}"]`)];
+				const first = inputs[0];
+				if (first.type === 'checkbox') data[name] = first.checked;
+				else if (first.type === 'radio') data[name] = inputs.find((i) => i.checked)?.value ?? '';
+				else data[name] = first.value.trim();
+			}
+			return data;
+		}
+
+		function setUnsaved(section, unsaved) {
+			const form = field(`${section}-panel`);
+			form.querySelector('.unsaved').hidden = !unsaved;
+			if (unsaved) form.querySelector('.status').hidden = true;
+		}
+
+		for (const section of Object.keys(DEFAULT_SETTINGS)) {
+			const form = field(`${section}-panel`);
+			fillForm(section);
+			const onEdit = (event) => {
+				applyRules();
+				if (event.target.id !== 'confirm-delete') setUnsaved(section, true);
+			};
+			form.addEventListener('input', onEdit);
+			form.addEventListener('change', onEdit);
+			form.addEventListener('submit', (event) => {
+				event.preventDefault();
+				const data = readForm(section);
+				if (section === 'account' && !EventHub.setFieldError(field('display-name'), data.displayName ? null : 'Display name is required.')) return;
+				settings = { ...settings, [section]: data };
+				EventHub.save('settings', settings);
+				EventHub.renderHeader();
+				setUnsaved(section, false);
+				const status = form.querySelector('.status');
+				status.textContent = MESSAGES[section];
+				status.hidden = false;
+			});
+		}
+
+		field('delete-account').addEventListener('click', () => {
+			field('delete-status').textContent = 'Account deletion is disabled in this demo.';
+			field('delete-status').hidden = false;
+		});
+
+		applyRules();
+	</script>
+</body>
+</html>

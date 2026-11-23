@@ -4,9 +4,12 @@ import { pathToFileURL } from 'node:url';
 import { AccountPage } from './AccountPage';
 
 export class LoginPage {
+	// Tests assert focus and empty-state behavior for these controls, so they are read-only
+	// assertion targets. They cannot be replaced by callers.
 	readonly email: Locator;
 	readonly password: Locator;
-	readonly submitButton: Locator;
+	readonly signInButton: Locator;
+	// Public only because tests assert the validation result with web-first assertions.
 	readonly errorMessage: Locator;
 
 	constructor(private readonly page: Page) {
@@ -29,7 +32,7 @@ export class LoginPage {
 		//        'button[type="submit"]' is also fine while the form has exactly one submit button.
 		// XPath: '//button[normalize-space()="Sign in"]' - SAME for this <button>; it matches the visible
 		//        text, like getByRole, but the selector is also usable outside Playwright.
-		this.submitButton = page.getByRole('button', { name: 'Sign in', exact: true });
+		this.signInButton = page.getByRole('button', { name: 'Sign in', exact: true });
 
 		// CSS:   '#login-error' or '[role="alert"]'   XPath: '//*[@id="login-error"]'
 		//        SAME for these tests, because toHaveText waits until the error text appears.
@@ -47,7 +50,13 @@ export class LoginPage {
 	async login(email: string, password: string): Promise<void> {
 		await this.email.fill(email);
 		await this.password.fill(password);
-		await this.submitButton.click();
+		await this.signInButton.click();
+	}
+
+	// Keep the submit behavior behind an action; the button locator is exposed only as an
+	// assertion target for the test that checks the sign-in form is available.
+	async submit(): Promise<void> {
+		await this.signInButton.click();
 	}
 
 	async loginAndOpenAccount(email: string, password: string): Promise<AccountPage> {

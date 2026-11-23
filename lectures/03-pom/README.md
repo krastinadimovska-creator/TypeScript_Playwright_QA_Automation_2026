@@ -92,8 +92,9 @@ await loginPage.login('sam@example.test', 'demo-password');
 2. **Define locators once.** Keep page-specific UI knowledge in one place.
 3. **Expose actions as methods.** Use meaningful names such as `login` or
    `selectCountry`.
-4. **Keep verification in tests.** Page objects expose locators for Playwright's
-   auto-waiting assertions; tests decide what outcome proves success.
+4. **Keep verification in tests.** Expose `readonly` locators only when tests need them as
+   Playwright auto-waiting assertion targets; keep interaction-only locators private. Tests
+   decide what outcome proves success.
 
 The benefits are consistent interactions, reusable workflows, easier locator
 updates, and tests that emphasize user intent rather than DOM mechanics.
@@ -110,15 +111,17 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export class LoginPage {
+  // Tests assert focus and empty-state behavior for these controls.
   readonly email: Locator;
   readonly password: Locator;
-  readonly submitButton: Locator;
+  readonly signInButton: Locator;
+  // Expose an assertion target, not the selector choice.
   readonly errorMessage: Locator;
 
   constructor(private readonly page: Page) {
     this.email = page.getByLabel('Email address');
     this.password = page.getByLabel('Password');
-    this.submitButton = page.getByRole('button', { name: 'Sign in', exact: true });
+    this.signInButton = page.getByRole('button', { name: 'Sign in', exact: true });
     this.errorMessage = page.getByRole('alert');
   }
 
@@ -130,14 +133,20 @@ export class LoginPage {
   async login(email: string, password: string): Promise<void> {
     await this.email.fill(email);
     await this.password.fill(password);
-    await this.submitButton.click();
+    await this.signInButton.click();
+  }
+
+  async submit(): Promise<void> {
+    await this.signInButton.click();
   }
 }
 ```
 
-The constructor centralizes locators. `navigate` hides the local URL and `login`
-encapsulates filling and submitting the form. Creating a page object does not
-navigate automatically: tests call `navigate` explicitly.
+The constructor centralizes locator choices. `navigate` hides the local URL and `login`
+encapsulates filling and submitting the form. Interaction details stay inside the page
+object; a small set of `readonly` locators is public only where tests need retrying
+assertions. Creating a page object does not navigate automatically: tests call `navigate`
+explicitly.
 
 ## Using page objects in tests
 
@@ -194,8 +203,8 @@ await expect(accountPage.welcomeMessage).toHaveText('Welcome back, Sam.');
 await expect(accountPage.email).toHaveText('sam@example.test');
 ```
 
-Use this method only when successful navigation is expected. For invalid or
-empty credentials, use `login` or click `submitButton` and assert the error.
+Use this method only when successful navigation is expected. For invalid credentials,
+use `login` and assert the error; for an empty form, use `submit` and assert the error.
 
 ## Best practices
 
@@ -205,6 +214,9 @@ empty credentials, use `login` or click `submitButton` and assert the error.
 - Use verb-led action names: `fillEmail`, `selectCountry`, `signOut`.
 - Group navigation, individual actions, and higher-level workflows clearly.
 - Keep each object focused on a page or cohesive component.
+- Keep interaction locators `private readonly`. Expose only `readonly` locators that tests
+  need to assert on; tests should not fill or click exposed locators.
+- Avoid setters for locators. A page object's selector choice should not be replaceable by a test.
 - Choose locators based on what is stable in the project: role and label locators for
   stable visible text, meaningful IDs or `data-testid` for translated or frequently
   reworded UI. The page object keeps that choice in one place.
@@ -218,6 +230,10 @@ test needs an auto-waiting assertion:
 ```ts
 await expect(loginPage.errorMessage).toHaveText('Email or password is incorrect.');
 ```
+
+`readonly` means callers cannot replace the locator reference; it does not expose the selector
+itself. A getter that only returns the same locator usually adds no encapsulation. Keep expected
+values and assertions in the test, and let Playwright retry assertions such as `toHaveText`.
 
 Use `test.step` when named phases make a longer scenario easier to follow:
 

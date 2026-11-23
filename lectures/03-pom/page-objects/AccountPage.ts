@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export class AccountPage {
+	// Tests use these readonly locators as assertion targets; the selector choices stay in the page object.
 	readonly welcomeMessage: Locator;
 	readonly email: Locator;
 

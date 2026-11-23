@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>My profile | EventHub</title>
+	<link rel="stylesheet" href="../../../02-playwright/pages/styles.css">
+	<link rel="stylesheet" href="app.css">
+	<script src="app.js"></script>
+</head>
+<body>
+	<header class="site-header">
+		<span class="brand">EventHub.</span>
+		<nav aria-label="Main">
+			<a href="profile.html">Profile</a>
+			<a href="registration.html">Registration</a>
+			<a href="attendees.html">Attendees</a>
+			<a href="settings.html">Settings</a>
+		</nav>
+		<span id="current-user" class="muted"></span>
+	</header>
+
+	<main>
+		<p class="eyebrow">Account</p>
+		<h1>My profile</h1>
+		<p id="save-status" class="status" role="status" hidden></p>
+
+		<!-- VIEW MODE: read-only details -->
+		<section id="profile-view" class="panel" aria-labelledby="details-heading">
+			<h2 id="details-heading">Profile details</h2>
+			<dl class="details">
+				<dt>Full name</dt><dd data-testid="profile-full-name"></dd>
+				<dt>Email</dt><dd data-testid="profile-email"></dd>
+				<dt>Phone</dt><dd data-testid="profile-phone"></dd>
+				<dt>Country</dt><dd data-testid="profile-country"></dd>
+				<dt>Preferred contact</dt><dd data-testid="profile-contact"></dd>
+				<dt>Interests</dt><dd data-testid="profile-interests"></dd>
+				<dt>Bio</dt><dd data-testid="profile-bio"></dd>
+			</dl>
+			<div class="actions">
+				<button id="edit-button" type="button">Edit profile</button>
+			</div>
+		</section>
+
+		<!-- EDIT MODE: the form -->
+		<form id="profile-form" class="panel" aria-labelledby="form-heading" novalidate hidden>
+			<h2 id="form-heading">Edit profile</h2>
+			<p id="form-alert" class="form-alert" role="alert" hidden></p>
+
+			<div class="grid">
+				<div>
+					<label for="first-name">First name</label>
+					<input id="first-name" name="firstName" autocomplete="given-name">
+					<p id="first-name-error" class="field-error" hidden></p>
+				</div>
+				<div>
+					<label for="last-name">Last name</label>
+					<input id="last-name" name="lastName" autocomplete="family-name">
+					<p id="last-name-error" class="field-error" hidden></p>
+				</div>
+				<div>
+					<label for="email">Email</label>
+					<input id="email" name="email" type="email" autocomplete="email">
+					<p id="email-error" class="field-error" hidden></p>
+				</div>
+				<div>
+					<label for="phone">Phone</label>
+					<input id="phone" name="phone" type="tel" autocomplete="tel">
+					<p id="phone-error" class="field-error" hidden></p>
+				</div>
+			</div>
+
+			<label for="country">Country</label>
+			<select id="country" name="country">
+				<option value="">Select a country</option>
+				<option>Bulgaria</option>
+				<option>Germany</option>
+				<option>Spain</option>
+				<option>United Kingdom</option>
+				<option>United States</option>
+			</select>
+			<p id="country-error" class="field-error" hidden></p>
+
+			<fieldset>
+				<legend>Preferred contact</legend>
+				<label class="choice"><input type="radio" name="contact" value="Email"> Email</label>
+				<label class="choice"><input type="radio" name="contact" value="Phone"> Phone</label>
+				<label class="choice"><input type="radio" name="contact" value="SMS"> SMS</label>
+			</fieldset>
+
+			<fieldset>
+				<legend>Interests</legend>
+				<label class="choice"><input type="checkbox" name="interests" value="Test automation"> Test automation</label>
+				<label class="choice"><input type="checkbox" name="interests" value="API testing"> API testing</label>
+				<label class="choice"><input type="checkbox" name="interests" value="Performance"> Performance</label>
+				<label class="choice"><input type="checkbox" name="interests" value="Security"> Security</label>
+				<label class="choice"><input type="checkbox" name="interests" value="Accessibility"> Accessibility</label>
+			</fieldset>
+
+			<label for="bio">Bio</label>
+			<textarea id="bio" name="bio" rows="3" maxlength="200" aria-describedby="bio-count"></textarea>
+			<p id="bio-count" class="char-count">0 / 200 characters</p>
+
+			<div class="actions">
+				<button type="submit">Save changes</button>
+				<button id="cancel-button" type="button" class="secondary">Cancel</button>
+			</div>
+		</form>
+
+		<section class="panel" aria-labelledby="reset-heading">
+			<h2 id="reset-heading">Start over</h2>
+			<p class="muted">Restore the demo profile. Useful while you practise.</p>
+			<button id="reset-button" type="button" class="secondary">Reset to demo data</button>
+		</section>
+	</main>
+	<footer>EventHub / Workshop exercise app. Data lives only in this browser tab.</footer>
+
+	<script>
+		EventHub.renderHeader();
+		const view = document.getElementById('profile-view');
+		const form = document.getElementById('profile-form');
+		const status = document.getElementById('save-status');
+		const alertBox = document.getElementById('form-alert');
+		const bio = document.getElementById('bio');
+		const bioCount = document.getElementById('bio-count');
+		const field = (id) => document.getElementById(id);
+
+		function renderView() {
+			const p = EventHub.load('profile', EventHub.defaultProfile);
+			const show = (id, value) => (document.querySelector(`[data-testid="${id}"]`).textContent = value || '—');
+			show('profile-full-name', `${p.firstName} ${p.lastName}`);
+			show('profile-email', p.email);
+			show('profile-phone', p.phone);
+			show('profile-country', p.country);
+			show('profile-contact', p.contact);
+			show('profile-interests', p.interests.join(', '));
+			show('profile-bio', p.bio);
+		}
+
+		function fillForm() {
+			const p = EventHub.load('profile', EventHub.defaultProfile);
+			field('first-name').value = p.firstName;
+			field('last-name').value = p.lastName;
+			field('email').value = p.email;
+			field('phone').value = p.phone;
+			field('country').value = p.country;
+			form.querySelectorAll('[name="contact"]').forEach((r) => (r.checked = r.value === p.contact));
+			form.querySelectorAll('[name="interests"]').forEach((c) => (c.checked = p.interests.includes(c.value)));
+			bio.value = p.bio;
+			updateBioCount();
+			['first-name', 'last-name', 'email', 'phone', 'country'].forEach((id) => EventHub.setFieldError(field(id)));
+			alertBox.hidden = true;
+		}
+
+		function updateBioCount() {
+			bioCount.textContent = `${bio.value.length} / 200 characters`;
+		}
+
+		function setMode(editing) {
+			view.hidden = editing;
+			form.hidden = !editing;
+			if (editing) { status.hidden = true; fillForm(); field('first-name').focus(); }
+		}
+
+		function validate() {
+			const results = [
+				EventHub.setFieldError(field('first-name'), field('first-name').value.trim() ? null : 'First name is required.'),
+				EventHub.setFieldError(field('last-name'), field('last-name').value.trim() ? null : 'Last name is required.'),
+				EventHub.setFieldError(field('email'), EventHub.isValidEmail(field('email').value.trim()) ? null : 'Enter a valid email address.'),
+				EventHub.setFieldError(field('phone'), /^[+\d][\d\s-]{6,}$/.test(field('phone').value.trim()) || !field('phone').value.trim() ? null : 'Phone may contain only digits, spaces, "-" and a leading "+".'),
+				EventHub.setFieldError(field('country'), field('country').value ? null : 'Select a country.'),
+			];
+			const errors = results.filter((ok) => !ok).length;
+			alertBox.hidden = errors === 0;
+			alertBox.textContent = errors === 1 ? 'Please fix 1 error.' : `Please fix ${errors} errors.`;
+			return errors === 0;
+		}
+
+		document.getElementById('edit-button').addEventListener('click', () => setMode(true));
+		document.getElementById('cancel-button').addEventListener('click', () => setMode(false));
+		bio.addEventListener('input', updateBioCount);
+
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			if (!validate()) return;
+			EventHub.save('profile', {
+				firstName: field('first-name').value.trim(),
+				lastName: field('last-name').value.trim(),
+				email: field('email').value.trim(),
+				phone: field('phone').value.trim(),
+				country: field('country').value,
+				contact: form.querySelector('[name="contact"]:checked')?.value ?? 'Email',
+				interests: [...form.querySelectorAll('[name="interests"]:checked')].map((c) => c.value),
+				bio: bio.value.trim(),
+			});
+			renderView();
+			EventHub.renderHeader();
+			setMode(false);
+			status.textContent = 'Profile saved.';
+			status.hidden = false;
+		});
+
+		document.getElementById('reset-button').addEventListener('click', () => {
+			EventHub.save('profile', EventHub.defaultProfile);
+			renderView();
+			EventHub.renderHeader();
+			setMode(false);
+			status.textContent = 'Demo profile restored.';
+			status.hidden = false;
+		});
+
+		renderView();
+	</script>
+</body>
+</html>

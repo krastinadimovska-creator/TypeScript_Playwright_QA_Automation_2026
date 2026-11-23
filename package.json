@@ -5,6 +5,10 @@
     "typescript": "^7.0.2"
   },
   "scripts": {
-    "test:pom-login": "playwright test lectures/03-pom/tests/login.spec.ts --headed"
+    "test:pom-login": "playwright test lectures/03-pom/tests/login.spec.ts --headed",
+    "test": "playwright test",
+    "test:chrome": "playwright test --project=chrome",
+    "test:firefox": "playwright test --project=firefox",
+    "test:workshop": "playwright test lectures/04-workshop"
   }
 }

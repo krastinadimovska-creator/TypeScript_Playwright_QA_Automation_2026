@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Workshop registration | EventHub</title>
+	<link rel="stylesheet" href="../../../02-playwright/pages/styles.css">
+	<link rel="stylesheet" href="app.css">
+	<script src="app.js"></script>
+</head>
+<body>
+	<header class="site-header">
+		<span class="brand">EventHub.</span>
+		<nav aria-label="Main">
+			<a href="profile.html">Profile</a>
+			<a href="registration.html">Registration</a>
+			<a href="attendees.html">Attendees</a>
+			<a href="settings.html">Settings</a>
+		</nav>
+		<span id="current-user" class="muted"></span>
+	</header>
+
+	<main>
+		<p class="eyebrow">QA Conference 2026</p>
+		<h1>Workshop registration</h1>
+
+		<div class="layout" id="registration">
+			<form id="registration-form" class="panel" aria-labelledby="form-heading" novalidate>
+				<h2 id="form-heading">Your booking</h2>
+				<p id="form-alert" class="form-alert" role="alert" hidden></p>
+
+				<label for="workshop">Workshop</label>
+				<select id="workshop" name="workshop">
+					<option value="">Choose a workshop</option>
+				</select>
+				<p id="workshop-error" class="field-error" hidden></p>
+
+				<label for="date">Date</label>
+				<select id="date" name="date" disabled>
+					<option value="">Choose a workshop first</option>
+				</select>
+				<p id="date-error" class="field-error" hidden></p>
+
+				<fieldset>
+					<legend>Ticket type</legend>
+					<label class="choice"><input type="radio" name="ticket" value="Standard" checked> Standard</label>
+					<label class="choice"><input type="radio" name="ticket" value="Student"> Student (−50%)</label>
+					<label class="choice"><input type="radio" name="ticket" value="VIP"> VIP (+€60 per seat)</label>
+				</fieldset>
+
+				<!-- Only visible for Student tickets -->
+				<div id="student-id-group" hidden>
+					<label for="student-id">Student ID</label>
+					<input id="student-id" name="studentId" placeholder="e.g. S-12345">
+					<p id="student-id-error" class="field-error" hidden></p>
+				</div>
+
+				<label for="seats">Number of seats</label>
+				<input id="seats" name="seats" type="number" min="1" max="5" value="1">
+				<p id="seats-error" class="field-error" hidden></p>
+
+				<fieldset>
+					<legend>Add-ons</legend>
+					<label class="choice"><input type="checkbox" name="addons" value="Lunch"> Lunch (+€15 per seat)</label>
+					<label class="choice"><input type="checkbox" name="addons" value="Recording"> Video recording (+€25)</label>
+					<label class="choice"><input type="checkbox" name="addons" value="Certificate"> Certificate (+€10 per seat)</label>
+				</fieldset>
+
+				<div class="grid">
+					<div>
+						<label for="full-name">Full name</label>
+						<input id="full-name" name="fullName" autocomplete="name">
+						<p id="full-name-error" class="field-error" hidden></p>
+					</div>
+					<div>
+						<label for="email">Email</label>
+						<input id="email" name="email" type="email" autocomplete="email">
+						<p id="email-error" class="field-error" hidden></p>
+					</div>
+				</div>
+
+				<label for="notes">Notes for the trainer (optional)</label>
+				<textarea id="notes" name="notes" rows="2"></textarea>
+
+				<p><label class="choice"><input id="terms" type="checkbox" name="terms"> I agree to the terms and conditions</label></p>
+
+				<div class="actions">
+					<button id="register-button" type="submit" disabled>Register</button>
+					<button type="reset" class="secondary">Clear form</button>
+				</div>
+			</form>
+
+			<aside class="panel summary" aria-labelledby="summary-heading">
+				<h2 id="summary-heading">Order summary</h2>
+				<dl id="summary-lines"></dl>
+				<dl>
+					<dt class="total">Total</dt>
+					<dd class="total" data-testid="order-total">€0</dd>
+				</dl>
+				<p class="hint">Prices update as you choose options.</p>
+			</aside>
+		</div>
+
+		<!-- Shown after a successful registration -->
+		<section id="confirmation" class="panel" aria-labelledby="confirmation-heading" hidden>
+			<h2 id="confirmation-heading">Registration confirmed</h2>
+			<p class="status" role="status" id="confirmation-message"></p>
+			<dl class="details">
+				<dt>Reference</dt><dd data-testid="booking-reference"></dd>
+				<dt>Workshop</dt><dd data-testid="booking-workshop"></dd>
+				<dt>Date</dt><dd data-testid="booking-date"></dd>
+				<dt>Ticket</dt><dd data-testid="booking-ticket"></dd>
+				<dt>Seats</dt><dd data-testid="booking-seats"></dd>
+				<dt>Add-ons</dt><dd data-testid="booking-addons"></dd>
+				<dt>Total paid</dt><dd data-testid="booking-total"></dd>
+			</dl>
+			<div class="actions"><button id="new-booking-button" type="button">Register for another workshop</button></div>
+		</section>
+
+		<h2>Frequently asked questions</h2>
+		<details class="faq">
+			<summary>Can I cancel my registration?</summary>
+			<p>Yes. Cancel up to 7 days before the workshop for a full refund.</p>
+		</details>
+		<details class="faq">
+			<summary>Is lunch vegetarian?</summary>
+			<p>Lunch includes vegetarian and vegan options. Tell us about allergies in the notes field.</p>
+		</details>
+		<details class="faq">
+			<summary>Who can buy a student ticket?</summary>
+			<p>Full-time students with a valid student ID. We check the ID at the entrance.</p>
+		</details>
+	</main>
+	<footer>EventHub / Workshop exercise app. Data lives only in this browser tab.</footer>
+
+	<script>
+		EventHub.renderHeader();
+
+		const WORKSHOPS = {
+			'Playwright Basics': { price: 120, dates: ['10 March 2026', '14 April 2026', '12 May 2026'] },
+			'API Testing': { price: 150, dates: ['17 March 2026', '21 April 2026'] },
+			'CI/CD for QA': { price: 180, dates: ['24 March 2026'] },
+			'Accessibility Testing': { price: 140, dates: ['31 March 2026', '26 May 2026'] },
+		};
+		const form = document.getElementById('registration-form');
+		const field = (id) => document.getElementById(id);
+		const workshopSelect = field('workshop');
+		const dateSelect = field('date');
+		const registerButton = field('register-button');
+		const alertBox = field('form-alert');
+		const euro = (n) => `€${n}`;
+
+		for (const [name, w] of Object.entries(WORKSHOPS)) workshopSelect.add(new Option(`${name} (€${w.price})`, name));
+
+		// Pre-fill the contact details from the profile page.
+		const profile = EventHub.load('profile', EventHub.defaultProfile);
+		const prefill = () => {
+			field('full-name').value = `${profile.firstName} ${profile.lastName}`;
+			field('email').value = profile.email;
+		};
+		prefill();
+
+		function fillDates() {
+			const w = WORKSHOPS[workshopSelect.value];
+			dateSelect.replaceChildren(new Option(w ? 'Choose a date' : 'Choose a workshop first', ''));
+			if (w) w.dates.forEach((d) => dateSelect.add(new Option(d, d)));
+			dateSelect.disabled = !w;
+		}
+
+		function readOrder() {
+			return {
+				workshop: workshopSelect.value,
+				date: dateSelect.value,
+				ticket: form.querySelector('[name="ticket"]:checked').value,
+				seats: Number(field('seats').value),
+				addons: [...form.querySelectorAll('[name="addons"]:checked')].map((c) => c.value),
+			};
+		}
+
+		// Price rules (also visible in the option labels):
+		// seat price = workshop price; Student -50%; VIP +60. Lunch 15 and Certificate 10 per seat; Recording 25 once.
+		function price(order) {
+			const w = WORKSHOPS[order.workshop];
+			const seats = Number.isInteger(order.seats) && order.seats > 0 ? order.seats : 0;
+			if (!w || !seats) return { lines: [], total: 0 };
+			let seatPrice = w.price;
+			if (order.ticket === 'Student') seatPrice = w.price / 2;
+			if (order.ticket === 'VIP') seatPrice = w.price + 60;
+			const lines = [[`${order.ticket} ticket × ${seats}`, seatPrice * seats]];
+			if (order.addons.includes('Lunch')) lines.push([`Lunch × ${seats}`, 15 * seats]);
+			if (order.addons.includes('Recording')) lines.push(['Video recording', 25]);
+			if (order.addons.includes('Certificate')) lines.push([`Certificate × ${seats}`, 10 * seats]);
+			return { lines, total: lines.reduce((sum, [, amount]) => sum + amount, 0) };
+		}
+
+		function renderSummary() {
+			const { lines, total } = price(readOrder());
+			field('summary-lines').replaceChildren(...lines.flatMap(([label, amount]) => {
+				const dt = document.createElement('dt'); dt.textContent = label;
+				const dd = document.createElement('dd'); dd.textContent = euro(amount);
+				return [dt, dd];
+			}));
+			document.querySelector('[data-testid="order-total"]').textContent = euro(total);
+			field('student-id-group').hidden = readOrder().ticket !== 'Student';
+			registerButton.disabled = !field('terms').checked;
+		}
+
+		function validate(order) {
+			const seats = field('seats').value;
+			const results = [
+				EventHub.setFieldError(workshopSelect, order.workshop ? null : 'Choose a workshop.'),
+				EventHub.setFieldError(dateSelect, order.date ? null : 'Choose a date.'),
+				EventHub.setFieldError(field('student-id'), order.ticket !== 'Student' || /^S-\d{5}$/.test(field('student-id').value.trim()) ? null : 'Enter a student ID like S-12345.'),
+				EventHub.setFieldError(field('seats'), /^[1-5]$/.test(seats) ? null : 'Choose between 1 and 5 seats.'),
+				EventHub.setFieldError(field('full-name'), field('full-name').value.trim() ? null : 'Full name is required.'),
+				EventHub.setFieldError(field('email'), EventHub.isValidEmail(field('email').value.trim()) ? null : 'Enter a valid email address.'),
+			];
+			const errors = results.filter((ok) => !ok).length;
+			alertBox.hidden = errors === 0;
+			alertBox.textContent = errors === 1 ? 'Please fix 1 error.' : `Please fix ${errors} errors.`;
+			return errors === 0;
+		}
+
+		workshopSelect.addEventListener('change', () => { fillDates(); renderSummary(); });
+		form.addEventListener('input', renderSummary);
+		form.addEventListener('change', renderSummary);
+		form.addEventListener('reset', () => setTimeout(() => {
+			fillDates(); prefill(); renderSummary();
+			form.querySelectorAll('.field-error').forEach((e) => (e.hidden = true));
+			form.querySelectorAll('[aria-invalid]').forEach((e) => e.removeAttribute('aria-invalid'));
+			alertBox.hidden = true;
+		}));
+
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			const order = readOrder();
+			if (!validate(order)) return;
+			const bookings = EventHub.load('bookings', []);
+			const reference = `EH-${String(bookings.length + 1).padStart(4, '0')}`;
+			const total = price(order).total;
+			bookings.push({ reference, ...order, total, fullName: field('full-name').value.trim(), email: field('email').value.trim() });
+			EventHub.save('bookings', bookings);
+
+			const show = (id, value) => (document.querySelector(`[data-testid="${id}"]`).textContent = value);
+			show('booking-reference', reference);
+			show('booking-workshop', order.workshop);
+			show('booking-date', order.date);
+			show('booking-ticket', order.ticket);
+			show('booking-seats', String(order.seats));
+			show('booking-addons', order.addons.join(', ') || 'None');
+			show('booking-total', euro(total));
+			field('confirmation-message').textContent = `Thank you! A confirmation was sent to ${field('email').value.trim()}.`;
+			field('registration').hidden = true;
+			field('confirmation').hidden = false;
+		});
+
+		field('new-booking-button').addEventListener('click', () => {
+			form.reset();
+			field('confirmation').hidden = true;
+			field('registration').hidden = false;
+		});
+
+		renderSummary();
+	</script>
+</body>
+</html>

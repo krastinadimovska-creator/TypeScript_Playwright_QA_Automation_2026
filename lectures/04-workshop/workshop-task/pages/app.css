@@ -1,0 +1,66 @@
+/* EventHub: extra styles on top of the shared course stylesheet (02-playwright/pages/styles.css). */
+.site-header nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.site-header nav a { padding: 6px 12px; border-radius: 4px; text-decoration: none; }
+.site-header nav a[aria-current="page"] { background: var(--green); color: white; }
+#current-user { font-size: 13px; }
+
+textarea { display: block; width: 100%; padding: 10px 12px; font: inherit; color: var(--ink); border: 1px solid #aeb9af; border-radius: 4px; resize: vertical; }
+fieldset { margin: 16px 0; padding: 12px 18px 16px; }
+fieldset legend { font: bold 15px/1.6 "Trebuchet MS", sans-serif; padding: 0 6px; }
+fieldset label.choice { display: inline-flex; align-items: center; margin: 6px 18px 0 0; }
+.field-error { color: var(--red); font-size: 13px; margin: 4px 0 0; }
+[aria-invalid="true"] { border-color: var(--red) !important; }
+.form-alert { padding: 12px 16px; background: #fbeceb; border-left: 3px solid var(--red); color: var(--red); }
+button.secondary { background: white; color: var(--green); border: 1px solid var(--green); }
+button.secondary:hover { background: #e8f0e9; }
+button.danger { background: var(--red); }
+button.danger:hover { background: #8a2823; }
+button.small { padding: 4px 10px; font-size: 13px; }
+
+/* Profile */
+dl.details { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 0; }
+dl.details dt { font-weight: bold; color: var(--muted); }
+dl.details dd { margin: 0; }
+.char-count { font-size: 13px; color: var(--muted); text-align: right; margin: 4px 0 0; }
+
+/* Registration */
+.layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr); gap: 24px; align-items: start; }
+.layout .panel { margin: 0; }
+.summary { position: sticky; top: 16px; }
+.summary dl { display: grid; grid-template-columns: 1fr max-content; gap: 6px 12px; margin: 0; }
+.summary dd { margin: 0; text-align: right; }
+.summary .total { font-weight: bold; font-size: 18px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.faq { border: 1px solid var(--line); border-radius: 6px; background: white; margin: 8px 0; }
+details.faq summary { cursor: pointer; padding: 12px 16px; font-weight: bold; }
+details.faq p { margin: 0; padding: 0 16px 14px; }
+
+/* Attendees */
+.toolbar { display: grid; grid-template-columns: 2fr 1fr auto; gap: 16px; align-items: end; }
+.toolbar label:not(.choice) { margin: 0 0 6px; }
+.toolbar input, .toolbar select { margin: 0; }
+.toolbar .choice { margin-bottom: 10px; }
+td.row-actions { white-space: nowrap; }
+td.row-actions button + button { margin-left: 6px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: #e8f0e9; color: var(--green); font-weight: bold; }
+.badge.speaker { background: #e7ecfa; color: #2f4aa0; }
+.badge.organizer { background: #fbf0dc; color: #8a5a0b; }
+tr.editing { background: #fffbe8; }
+
+/* Settings: accordion built with buttons + aria-expanded */
+.accordion { border: 1px solid var(--line); border-radius: 6px; background: white; }
+.accordion + .accordion { margin-top: 10px; }
+.accordion h2 { margin: 0; font-size: 20px; }
+.accordion-trigger { display: flex; width: 100%; align-items: center; gap: 12px; background: white; color: var(--ink); padding: 14px 18px; font: bold 18px Georgia, serif; border-radius: 6px; text-align: left; }
+.accordion-trigger:hover { background: #f1f5f1; }
+.accordion-trigger::after { content: '+'; margin-left: auto; font-size: 22px; color: var(--green); }
+.accordion-trigger[aria-expanded="true"]::after { content: '−'; }
+.accordion-panel { padding: 0 18px 18px; border-top: 1px solid var(--line); }
+.unsaved { font: bold 12px "Trebuchet MS", sans-serif; color: #8a5a0b; background: #fbf0dc; border-radius: 999px; padding: 1px 8px; }
+
+body.theme-dark { background: #17201b; color: #e6ece7; }
+body.theme-dark .panel, body.theme-dark .accordion, body.theme-dark .accordion-trigger, body.theme-dark .site-header,
+body.theme-dark details.faq, body.theme-dark table { background: #202b25; color: #e6ece7; }
+body.font-small { font-size: 13px; }
+body.font-large { font-size: 18px; }
+
+@media (max-width: 760px) { .layout, .toolbar { grid-template-columns: 1fr; } .summary { position: static; } }

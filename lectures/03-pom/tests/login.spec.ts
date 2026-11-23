@@ -29,7 +29,7 @@ test.describe('LoginPage page object', () => {
 	});
 
 	test('shows an error when the form is empty', async () => {
-		await loginPage.submitButton.click();
+		await loginPage.submit();
 
 		await expect(loginPage.errorMessage).toHaveText('Enter your email address and password.');
 		await expect(loginPage.email).toBeFocused();
@@ -61,7 +61,7 @@ test.describe('LoginPage page object', () => {
 			await accountPage.navigate();
 
 			await expect(page).toHaveURL(/\/login\.html$/);
-			await expect(loginPage.submitButton).toBeVisible();
+			await expect(loginPage.signInButton).toBeVisible();
 		});
 	});
 });

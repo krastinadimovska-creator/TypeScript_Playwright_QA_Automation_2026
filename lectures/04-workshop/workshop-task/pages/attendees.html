@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Attendees | EventHub</title>
+	<link rel="stylesheet" href="../../../02-playwright/pages/styles.css">
+	<link rel="stylesheet" href="app.css">
+	<script src="app.js"></script>
+</head>
+<body>
+	<header class="site-header">
+		<span class="brand">EventHub.</span>
+		<nav aria-label="Main">
+			<a href="profile.html">Profile</a>
+			<a href="registration.html">Registration</a>
+			<a href="attendees.html">Attendees</a>
+			<a href="settings.html">Settings</a>
+		</nav>
+		<span id="current-user" class="muted"></span>
+	</header>
+
+	<main>
+		<p class="eyebrow">QA Conference 2026</p>
+		<h1>Attendees</h1>
+		<p id="action-status" class="status" role="status" hidden></p>
+
+		<section class="panel" aria-label="Filters">
+			<div class="toolbar">
+				<div>
+					<label for="search">Search attendees</label>
+					<input id="search" type="search" placeholder="Name, email or company">
+				</div>
+				<div>
+					<label for="role-filter">Filter by role</label>
+					<select id="role-filter">
+						<option value="">All roles</option>
+						<option>Attendee</option>
+						<option>Speaker</option>
+						<option>Organizer</option>
+					</select>
+				</div>
+				<label class="choice"><input id="checked-in-filter" type="checkbox"> Show only checked-in</label>
+			</div>
+		</section>
+
+		<table aria-describedby="result-count">
+			<caption>Registered attendees</caption>
+			<thead>
+				<tr>
+					<th scope="col">Name</th>
+					<th scope="col">Email</th>
+					<th scope="col">Company</th>
+					<th scope="col">Role</th>
+					<th scope="col">Checked in</th>
+					<th scope="col">Actions</th>
+				</tr>
+			</thead>
+			<tbody id="attendee-rows"></tbody>
+		</table>
+		<p id="result-count" class="muted" data-testid="result-count"></p>
+
+		<form id="attendee-form" class="panel" aria-labelledby="form-heading" novalidate>
+			<h2 id="form-heading">Add attendee</h2>
+			<p id="form-alert" class="form-alert" role="alert" hidden></p>
+			<div class="grid">
+				<div>
+					<label for="attendee-name">Full name</label>
+					<input id="attendee-name" name="name">
+					<p id="attendee-name-error" class="field-error" hidden></p>
+				</div>
+				<div>
+					<label for="attendee-email">Email</label>
+					<input id="attendee-email" name="email" type="email">
+					<p id="attendee-email-error" class="field-error" hidden></p>
+				</div>
+				<div>
+					<label for="attendee-company">Company</label>
+					<input id="attendee-company" name="company">
+				</div>
+				<div>
+					<label for="attendee-role">Role</label>
+					<select id="attendee-role" name="role">
+						<option>Attendee</option>
+						<option>Speaker</option>
+						<option>Organizer</option>
+					</select>
+				</div>
+			</div>
+			<p><label class="choice"><input id="attendee-checked-in" type="checkbox" name="checkedIn"> Already checked in</label></p>
+			<div class="actions">
+				<button id="submit-button" type="submit">Add attendee</button>
+				<button id="cancel-edit-button" type="button" class="secondary" hidden>Cancel</button>
+			</div>
+		</form>
+	</main>
+	<footer>EventHub / Workshop exercise app. Data lives only in this browser tab.</footer>
+
+	<script>
+		EventHub.renderHeader();
+
+		const DEFAULT_ATTENDEES = [
+			{ id: 1, name: 'Maria Ivanova', email: 'maria@qa-labs.io', company: 'QA Labs', role: 'Speaker', checkedIn: true },
+			{ id: 2, name: 'John Smith', email: 'john.smith@example.com', company: 'Acme Corp', role: 'Attendee', checkedIn: false },
+			{ id: 3, name: 'Elena Petrova', email: 'elena@testwise.dev', company: 'TestWise', role: 'Attendee', checkedIn: true },
+			{ id: 4, name: 'David Lee', email: 'david.lee@example.com', company: 'Acme Corp', role: 'Organizer', checkedIn: false },
+			{ id: 5, name: 'Sofia Georgieva', email: 'sofia@automate.bg', company: 'Automate BG', role: 'Attendee', checkedIn: false },
+		];
+		const field = (id) => document.getElementById(id);
+		const form = field('attendee-form');
+		const rows = field('attendee-rows');
+		const status = field('action-status');
+		const alertBox = field('form-alert');
+		let attendees = EventHub.load('attendees', DEFAULT_ATTENDEES);
+		let editingId = null;
+
+		const persist = () => EventHub.save('attendees', attendees);
+		const announce = (message) => { status.textContent = message; status.hidden = false; };
+
+		function visibleAttendees() {
+			const term = field('search').value.trim().toLowerCase();
+			const role = field('role-filter').value;
+			const onlyCheckedIn = field('checked-in-filter').checked;
+			return attendees.filter((a) =>
+				(!term || [a.name, a.email, a.company].some((v) => v.toLowerCase().includes(term))) &&
+				(!role || a.role === role) &&
+				(!onlyCheckedIn || a.checkedIn));
+		}
+
+		function cell(content) {
+			const td = document.createElement('td');
+			if (content instanceof Node) td.append(content); else td.textContent = content;
+			return td;
+		}
+
+		function button(label, ariaLabel, className, onClick) {
+			const b = document.createElement('button');
+			b.type = 'button';
+			b.textContent = label;
+			b.className = className;
+			b.setAttribute('aria-label', ariaLabel);
+			b.addEventListener('click', onClick);
+			return b;
+		}
+
+		function renderTable() {
+			const list = visibleAttendees();
+			rows.replaceChildren();
+			for (const a of list) {
+				const tr = document.createElement('tr');
+				tr.dataset.testid = 'attendee-row';
+				if (a.id === editingId) tr.classList.add('editing');
+
+				const badge = document.createElement('span');
+				badge.className = `badge ${a.role.toLowerCase()}`;
+				badge.textContent = a.role;
+
+				const checkbox = document.createElement('input');
+				checkbox.type = 'checkbox';
+				checkbox.checked = a.checkedIn;
+				checkbox.setAttribute('aria-label', `Checked in: ${a.name}`);
+				checkbox.addEventListener('change', () => {
+					a.checkedIn = checkbox.checked;
+					persist();
+					announce(`${a.name} ${a.checkedIn ? 'checked in' : 'marked as not checked in'}.`);
+					renderTable();
+				});
+
+				const actions = cell('');
+				actions.className = 'row-actions';
+				actions.append(
+					button('Edit', `Edit ${a.name}`, 'small secondary', () => startEdit(a.id)),
+					button('Delete', `Delete ${a.name}`, 'small danger', () => remove(a.id)),
+				);
+				tr.append(cell(a.name), cell(a.email), cell(a.company), cell(badge), cell(checkbox), actions);
+				rows.append(tr);
+			}
+			if (list.length === 0) {
+				const tr = document.createElement('tr');
+				const td = cell('No attendees match your filters.');
+				td.colSpan = 6;
+				td.className = 'muted';
+				tr.append(td);
+				rows.append(tr);
+			}
+			const checkedIn = attendees.filter((a) => a.checkedIn).length;
+			field('result-count').textContent = `Showing ${list.length} of ${attendees.length} attendees (${checkedIn} checked in)`;
+		}
+
+		function clearErrors() {
+			EventHub.setFieldError(field('attendee-name'));
+			EventHub.setFieldError(field('attendee-email'));
+			alertBox.hidden = true;
+		}
+
+		function resetForm() {
+			editingId = null;
+			form.reset();
+			clearErrors();
+			field('form-heading').textContent = 'Add attendee';
+			field('submit-button').textContent = 'Add attendee';
+			field('cancel-edit-button').hidden = true;
+			renderTable();
+		}
+
+		function startEdit(id) {
+			const a = attendees.find((x) => x.id === id);
+			editingId = id;
+			clearErrors();
+			field('attendee-name').value = a.name;
+			field('attendee-email').value = a.email;
+			field('attendee-company').value = a.company;
+			field('attendee-role').value = a.role;
+			field('attendee-checked-in').checked = a.checkedIn;
+			field('form-heading').textContent = `Edit attendee: ${a.name}`;
+			field('submit-button').textContent = 'Save changes';
+			field('cancel-edit-button').hidden = false;
+			renderTable();
+			field('attendee-name').focus();
+		}
+
+		function remove(id) {
+			const a = attendees.find((x) => x.id === id);
+			if (!confirm(`Delete ${a.name}? This cannot be undone.`)) return;
+			attendees = attendees.filter((x) => x.id !== id);
+			persist();
+			if (editingId === id) resetForm();
+			announce(`${a.name} was deleted.`);
+			renderTable();
+		}
+
+		function validate(data) {
+			const duplicate = attendees.some((a) => a.id !== editingId && a.email.toLowerCase() === data.email.toLowerCase());
+			let emailError = null;
+			if (!EventHub.isValidEmail(data.email)) emailError = 'Enter a valid email address.';
+			else if (duplicate) emailError = 'An attendee with this email already exists.';
+			const results = [
+				EventHub.setFieldError(field('attendee-name'), data.name ? null : 'Full name is required.'),
+				EventHub.setFieldError(field('attendee-email'), emailError),
+			];
+			const errors = results.filter((ok) => !ok).length;
+			alertBox.hidden = errors === 0;
+			alertBox.textContent = errors === 1 ? 'Please fix 1 error.' : `Please fix ${errors} errors.`;
+			return errors === 0;
+		}
+
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			const data = {
+				name: field('attendee-name').value.trim(),
+				email: field('attendee-email').value.trim(),
+				company: field('attendee-company').value.trim(),
+				role: field('attendee-role').value,
+				checkedIn: field('attendee-checked-in').checked,
+			};
+			if (!validate(data)) return;
+			if (editingId === null) {
+				const id = Math.max(0, ...attendees.map((a) => a.id)) + 1;
+				attendees.push({ id, ...data });
+				announce(`${data.name} was added.`);
+			} else {
+				Object.assign(attendees.find((a) => a.id === editingId), data);
+				announce(`${data.name} was updated.`);
+			}
+			persist();
+			resetForm();
+		});
+
+		field('cancel-edit-button').addEventListener('click', resetForm);
+		field('search').addEventListener('input', renderTable);
+		field('role-filter').addEventListener('change', renderTable);
+		field('checked-in-filter').addEventListener('change', renderTable);
+
+		renderTable();
+	</script>
+</body>
+</html>
