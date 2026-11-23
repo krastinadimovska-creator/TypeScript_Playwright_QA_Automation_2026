@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POM Flow: how page objects, this and tests work together</title>
+<!--
+	Interactive teaching aid for Lecture 4 (folder 1-page-object-model).
+	Open this file directly in a browser; it needs no server and no internet.
+	Code snippets are copied from the real files, with their real line numbers.
+-->
+<style>
+	:root {
+		--bg: #0f172a; --panel: #111c33; --panel-2: #16233f; --line: #3b5683; --text: #f8fafc; --muted: #cbd5e1; --dim: #a5b4cf;
+		--test: #60a5fa; --builtin: #94a3b8; --factory: #a78bfa; --object: #34d399; --closure: #fbbf24; --data: #2dd4bf; --pom: #f472b6; --error: #f87171;
+		--call: #fb923c; --creates: #fbbf24; --returns: #34d399; --uses: #fde68a; --browser: #60a5fa; --arg: #2dd4bf;
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+	header { padding: 18px 24px 8px; }
+	h1 { margin: 0 0 4px; font-size: 26px; }
+	h1 small { color: var(--muted); font-weight: 400; font-size: 16px; }
+	.rules { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+	.rules li { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-size: 15px; color: var(--muted); }
+	.rules b { color: var(--text); }
+	code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; color: #fde68a; background: #0b1224; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+	/* ---------- Intro panel: "What is a factory function?" ---------- */
+	.intro { margin: 12px 24px 4px; background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; }
+	.intro summary { list-style: none; cursor: pointer; padding: 12px 16px; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+	.intro summary::-webkit-details-marker { display: none; }
+	.intro summary::before { content: '▶'; color: var(--accent); font-size: 14px; transition: transform 0.2s; }
+	.intro[open] summary::before { transform: rotate(90deg); }
+	.intro summary small { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: auto; }
+	.intro summary:focus-visible { outline: 2px solid var(--accent); border-radius: 14px; }
+	.intro-body { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; animation: fade 0.3s ease; }
+	@media (max-width: 900px) { .intro-body { grid-template-columns: 1fr; } }
+	.intro-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+	.intro-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--accent); }
+	.intro-card p { margin: 0 0 8px; font-size: 16px; }
+	.intro-card ul { margin: 0; padding-left: 20px; font-size: 16px; }
+	.intro-card li { margin: 3px 0; }
+	.intro-card pre { margin: 6px 0 8px; background: #070d1c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 14.5px/1.6 ui-monospace, Menlo, monospace; color: #f1f5f9; overflow-x: auto; }
+	.intro-card pre .c { color: #a5b4cf; font-style: italic; }
+	.intro-card pre .k { color: #d8b4fe; }
+	.intro-card pre .s { color: #86efac; }
+	.intro-card pre .u { color: #fde68a; font-weight: 700; }
+	.intro-card pre .e { color: #fca5a5; font-weight: 700; }
+	.intro-card.wide { grid-column: 1 / -1; }
+	.intro table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+	.intro th, .intro td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	.intro th { color: var(--muted); font-weight: 600; }
+	.intro .no h3 { color: var(--closure); }
+
+	/* ---------- Toolbar ---------- */
+	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 24px; position: sticky; top: 0; z-index: 5; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+	.flows { display: flex; gap: 6px; flex-wrap: wrap; }
+	.flow-btn { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 7px 14px; font-size: 15px; cursor: pointer; text-align: left; }
+	.flow-btn small { display: block; color: var(--muted); font-size: 13px; }
+	.flow-btn.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--panel-2); }
+	.controls { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+	.controls button, .controls select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; height: 38px; min-width: 42px; cursor: pointer; font-size: 16px; }
+	.controls button.primary { background: var(--accent-btn); border-color: var(--accent-btn); min-width: 100px; }
+	.counter { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+
+	.progress { display: flex; gap: 3px; padding: 8px 24px 0; }
+	.progress div { flex: 1; height: 8px; border-radius: 4px; opacity: 0.4; cursor: pointer; transition: opacity 0.2s, transform 0.2s; }
+	.progress div.past { opacity: 0.65; }
+	.progress div.current { opacity: 1; transform: scaleY(1.6); }
+
+	main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(420px, 1fr); gap: 16px; padding: 14px 24px 24px; align-items: start; }
+	.graph-card { position: sticky; top: 70px; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+	.card h2 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+	.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+	/* ---------- Graph ---------- */
+	svg { width: 100%; height: auto; display: block; }
+	.edge { fill: none; stroke: var(--line); stroke-width: 2; opacity: 0.4; transition: stroke 0.3s, opacity 0.3s; }
+	.edge.in-flow { opacity: 1; stroke: #6b86b8; stroke-width: 2.5; }
+	.edge.creates { stroke-dasharray: 2 5; }
+	.edge.uses { stroke-dasharray: 6 5; }
+	.anim { fill: none; stroke-width: 4; stroke-linecap: round; filter: drop-shadow(0 0 6px currentColor); }
+	.anim.call { stroke: var(--call); color: var(--call); }
+	.anim.creates { stroke: var(--creates); color: var(--creates); }
+	.anim.returns { stroke: var(--returns); color: var(--returns); }
+	.anim.uses { stroke: var(--uses); color: var(--uses); }
+	.anim.browser { stroke: var(--browser); color: var(--browser); }
+	.anim.arg { stroke: var(--arg); color: var(--arg); }
+	.dot { filter: drop-shadow(0 0 8px currentColor); }
+
+	.node rect { fill: #0b1224; stroke: var(--k); stroke-width: 2; transition: fill 0.3s, opacity 0.3s, stroke-width 0.3s; }
+	.node { --k: var(--builtin); transition: opacity 0.35s; }
+	.node .title { fill: var(--text); font: 700 16px ui-monospace, Menlo, monospace; text-anchor: middle; }
+	.node .sub { fill: var(--muted); font-size: 13px; text-anchor: middle; }
+	.node .status { font-size: 13.5px; font-weight: 700; text-anchor: middle; fill: var(--muted); }
+	.node .badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-anchor: middle; fill: var(--k); }
+	.k-test { --k: var(--test); } .k-builtin { --k: var(--builtin); } .k-factory { --k: var(--factory); }
+	.k-object { --k: var(--object); } .k-closure { --k: var(--closure); } .k-data { --k: var(--data); }
+
+	.s-idle { opacity: 0.55; }
+	.s-unused { opacity: 0.28; }
+	.s-running rect, .s-used rect, .s-busy rect { fill: color-mix(in srgb, var(--k) 30%, #0b1224); stroke-width: 3; animation: pulse 1s ease-in-out infinite; }
+	.s-running .status, .s-used .status, .s-busy .status, .s-alive .status { fill: var(--k); }
+	.s-alive rect { fill: color-mix(in srgb, var(--k) 16%, #0b1224); }
+	.s-finished { opacity: 0.7; }
+	.s-finished rect { stroke-dasharray: 5 4; }
+	.s-error rect { stroke: var(--error); fill: color-mix(in srgb, var(--error) 25%, #0b1224); stroke-width: 3; }
+	.s-error .status { fill: var(--error); }
+	.s-done rect { stroke: #22c55e; fill: color-mix(in srgb, #22c55e 18%, #0b1224); }
+	.s-done .status { fill: #22c55e; }
+	@keyframes pulse { 0%, 100% { filter: drop-shadow(0 0 2px var(--k)); } 50% { filter: drop-shadow(0 0 14px var(--k)); } }
+
+	.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 15px; color: var(--muted); }
+	.legend span { display: inline-flex; align-items: center; gap: 6px; }
+	.sw { width: 12px; height: 12px; border-radius: 3px; border: 2px solid; display: inline-block; }
+	.ln { width: 22px; height: 0; border-top: 3px solid; display: inline-block; }
+
+	/* ---------- Narration ---------- */
+	.phase { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 10px; border-radius: 999px; color: #0b1224; }
+	.now h3 { margin: 10px 0 8px; font-size: 20px; }
+	.now p { margin: 0; color: var(--text); font-size: 17px; line-height: 1.6; }
+	.now .text { animation: fade 0.35s ease; }
+	@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Code ---------- */
+	.file { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 6px; }
+	.file b { color: var(--text); }
+	pre.code { position: relative; max-height: 360px; overflow: auto; margin: 0; background: #070d1c; border: 1px solid var(--line); border-radius: 10px; padding: 8px 0; font: 14.5px/1.65 ui-monospace, Menlo, monospace; color: #f1f5f9; }
+	.code .l { display: block; padding: 0 12px 0 0; white-space: pre; border-left: 3px solid transparent; transition: background 0.3s; }
+	.code .l .n { display: inline-block; width: 42px; text-align: right; padding-right: 12px; color: var(--dim); user-select: none; }
+	.code .l.hl { background: var(--accent-hl); border-left-color: var(--accent); }
+	.code .l.hl .n { color: var(--text); font-weight: 700; }
+	.code .l.err { background: rgba(248, 113, 113, 0.28); border-left-color: var(--error); }
+	.tok-k { color: #d8b4fe; } .tok-s { color: #86efac; } .tok-c { color: #a5b4cf; font-style: italic; }
+
+	/* ---------- Closure memory ---------- */
+	.memory { display: flex; flex-direction: column; gap: 10px; }
+	.scope { border: 1px solid var(--k); border-radius: 10px; background: color-mix(in srgb, var(--k) 9%, #0b1224); padding: 8px 12px; animation: slide-in 0.4s ease; }
+	.scope.kept { animation: none; }
+	.scope-h { font: 700 15px ui-monospace, Menlo, monospace; color: var(--text); }
+	.scope-h small { font: 400 13px system-ui, sans-serif; color: var(--muted); margin-left: 6px; }
+	.vars { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: 14.5px; }
+	.vars .v { font-family: ui-monospace, Menlo, monospace; color: #fde68a; padding: 0 4px; border-radius: 4px; transition: background 0.3s; }
+	.vars .d { color: var(--muted); }
+	.vars .hl { background: rgba(251, 191, 36, 0.35); color: #fff; }
+	.vars .d.hl { background: none; color: var(--text); font-weight: 600; }
+	.vars .ovr { color: var(--data); font-weight: 700; }
+	.pub { font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+	.pill { font: 13.5px ui-monospace, Menlo, monospace; color: #0b1224; background: var(--object); border-radius: 999px; padding: 0 8px; transition: box-shadow 0.3s; }
+	.pill.hl { box-shadow: 0 0 0 2px #fff, 0 0 12px var(--object); }
+	.empty { color: var(--dim); font-size: 14px; font-style: italic; }
+	@keyframes slide-in { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Timeline ---------- */
+	ol.timeline { margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+	ol.timeline li { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--dim); font-size: 15px; }
+	ol.timeline li:hover { background: var(--panel-2); }
+	ol.timeline li.current { background: var(--accent-deep); color: #fff; font-weight: 700; }
+	ol.timeline li.past { color: var(--text); }
+	ol.timeline .pd { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: translateY(1px); }
+	ol.timeline .num { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 18px; }
+
+	footer { padding: 0 24px 28px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+	@media (max-width: 1100px) { main { grid-template-columns: 1fr; } .graph-card { position: static; } }
+
+	footer a { color: var(--test); }
+	footer nav { margin-top: 6px; }
+	footer nav a.here { color: var(--text); font-weight: 700; text-decoration: none; }
+	.edge.needs { stroke-dasharray: 8 4; }
+	.edge.request { stroke-dasharray: 3 4; }
+	.anim.needs { stroke: var(--needs); color: var(--needs); }
+	.anim.request { stroke: var(--request); color: var(--request); }
+	.anim.error { stroke: var(--error); color: var(--error); }
+
+	:root { --accent: #f472b6; --accent-hl: rgba(244, 114, 182, 0.28); --accent-btn: #be185d; --accent-deep: #831843; --needs: #e879f9; --request: #7dd3fc; }
+	.k-cls { --k: var(--pom); } .k-state { --k: var(--closure); } .k-error { --k: var(--error); }
+</style>
+</head>
+<body>
+<header>
+	<h1>POM Flow <small>how a test creates page objects, and how their methods reach the page through <code>this</code></small></h1>
+	<ul class="rules">
+		<li><b>1.</b> A page object is a <b>class</b>: one per page, created with <code>new</code></li>
+		<li><b>2.</b> The <b>constructor</b> stores <code>page</code> and builds the locators as <b>fields</b> on <code>this</code></li>
+		<li><b>3.</b> <b>Methods</b> are shared by all objects and use <code>this.*</code> to reach the right fields</li>
+		<li><b>4.</b> <b>No assertions</b> inside: tests assert on public <code>readonly</code> locators</li>
+	</ul>
+</header>
+
+<!-- Collapsible theory panel. Closed by default so the animation stays on screen; toggle with a click or the "I" key. -->
+<details class="intro" id="intro">
+	<summary>What is a Page Object? The basics in 2 minutes <small>click or press <code>I</code> to show / hide</small></summary>
+	<div class="intro-body">
+		<div class="intro-card">
+			<h3>1. The idea in one sentence</h3>
+			<p>A <b>Page Object</b> is a <b>class</b> that represents one page (or one component). It keeps the page's <b>locators</b> inside and offers <b>methods</b> named after what a user does: <code>login()</code>, <code>addTask()</code>.</p>
+			<p>Analogy: a TV remote. You press "volume up" (a method); the wires (selectors) stay hidden inside the box.</p>
+		</div>
+
+		<div class="intro-card">
+			<h3>2. Anatomy of a page object</h3>
+<pre><span class="k">export class</span> LoginPage {
+  <span class="k">private readonly</span> usernameInput: Locator; <span class="c">// hidden</span>
+  <span class="k">readonly</span> errorMessage: Locator;          <span class="c">// for assertions</span>
+
+  <span class="k">constructor</span>(<span class="k">private readonly</span> <span class="u">page</span>: Page) {
+    <span class="k">this</span>.usernameInput = <span class="u">page</span>.locator(<span class="s">'#username'</span>);
+    <span class="k">this</span>.errorMessage = <span class="u">page</span>.locator(<span class="s">'#login-error'</span>);
+  }
+
+  <span class="k">async</span> login(user: string, pass: string) {
+    <span class="k">await this</span>.usernameInput.fill(user); <span class="c">// ...</span>
+  }
+}</pre>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>3. new, constructor and this</h3>
+			<table>
+				<tr><th>Code</th><th>What happens</th></tr>
+				<tr><td><code>new LoginPage(page)</code></td><td>creates an empty object, runs the <code>constructor</code> with <code>this</code> = that object, returns it</td></tr>
+				<tr><td><code>constructor(private readonly page: Page)</code></td><td>TypeScript shortcut: stores the argument as <code>this.page</code></td></tr>
+				<tr><td><code>this.usernameInput = ...</code></td><td>a <b>field</b>: data stored on <b>this</b> object</td></tr>
+				<tr><td><code>loginPage.login(...)</code></td><td>runs the <b>shared</b> method with <code>this</code> = <code>loginPage</code> (the object before the dot)</td></tr>
+				<tr><td><code>const { login } = loginPage; login(...)</code></td><td>no object before the dot, so <code>this</code> = <code>undefined</code> and you get a <b>TypeError</b></td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card">
+			<h3>4. When is a page object created?</h3>
+			<ul>
+				<li><b>Once per test</b>, in <code>beforeEach</code> (folder 1) or inside a fixture (folder 5).</li>
+				<li><b>Each test gets a new page, so it needs new objects.</b> Never keep a page object in a module-level variable shared by tests.</li>
+				<li><b>Creating it does nothing in the browser.</b> Locators are lazy; they are only looked up when an action or <code>expect</code> uses them.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card">
+			<h3>5. What goes in, what stays out</h3>
+			<ul>
+				<li><b>In:</b> locators, user actions, navigation, public locators that tests assert on.</li>
+				<li><b>Out:</b> <code>expect(...)</code> assertions: they belong in the test.</li>
+				<li><b>Out:</b> test data: pass it as arguments.</li>
+				<li><b>Out:</b> setup like API login or seeding data: that is a job for <b>fixtures</b>.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>6. Where page objects are used in real projects</h3>
+			<table>
+				<tr><th>Need</th><th>Page object example</th></tr>
+				<tr><td>Big forms</td><td><code>checkoutPage.fillShipping(address)</code> hides 10 fields behind one method</td></tr>
+				<tr><td>Reusable components</td><td><code>class Header</code>, <code>class DataTable</code>, used inside pages: <code>this.header = new Header(page)</code> (composition)</td></tr>
+				<tr><td>Multi-step flows</td><td>a method returns the next page: <code>const dashboard = await loginPage.submit()</code> → <code>DashboardPage</code></td></tr>
+				<tr><td>Large teams</td><td>a shared vocabulary: everyone writes <code>cartPage.removeItem(...)</code>, nobody copies selectors</td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card">
+			<h3>7. Why use page objects?</h3>
+			<ul>
+				<li><b>One place to fix:</b> rename a button and change one file, not 30 tests.</li>
+				<li><b>Readable tests:</b> they read like user stories.</li>
+				<li><b>Autocomplete:</b> type <code>tasksPage.</code> and the editor lists every action.</li>
+				<li><b>Encapsulation:</b> <code>private</code> selectors can't leak into tests.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card no">
+			<h3>8. Watch out for</h3>
+			<ul>
+				<li><b>"God" classes</b> with 50 methods: split into components.</li>
+				<li><b>Deep inheritance</b> (<code>BasePage → FormPage → ...</code>): prefer composition.</li>
+				<li><b>Boilerplate:</b> <code>beforeEach</code> + <code>new</code> in every spec. Fixtures can create objects for you.</li>
+				<li><b>Detached methods</b> lose <code>this</code>.</li>
+			</ul>
+			<p style="margin-top:8px">Rule of thumb: <b>the page object knows HOW to use the page; the test knows WHAT should happen.</b></p>
+		</div>
+	</div>
+</details>
+
+<div class="toolbar">
+	<div class="flows" id="flows"></div>
+	<div class="controls">
+		<button id="reset" title="Restart (Home)">⏮</button>
+		<button id="prev" title="Previous step (←)">◀</button>
+		<button id="play" class="primary" title="Play / pause (Space)">▶ Play</button>
+		<button id="next" title="Next step (→)">▶|</button>
+		<span class="counter" id="counter"></span>
+		<select id="speed" title="Speed">
+			<option value="0.6">0.6×</option>
+			<option value="1" selected>1×</option>
+			<option value="1.6">1.6×</option>
+		</select>
+	</div>
+</div>
+<div class="progress" id="progress"></div>
+
+<main>
+	<section class="card graph-card">
+		<h2>What calls what <span style="text-transform:none;letter-spacing:0">(test → class → object → fields on this → page)</span></h2>
+		<svg id="graph" viewBox="0 40 1000 610" role="img" aria-label="Page Object Model call graph">
+			<defs>
+				<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b5683"/></marker>
+			</defs>
+			<g id="edges"></g>
+			<g id="anims"></g>
+			<g id="nodes"></g>
+		</svg>
+		<div class="legend">
+			<span><i class="sw" style="border-color:var(--test)"></i>test (spec file)</span>
+			<span><i class="sw" style="border-color:var(--pom)"></i>class (blueprint)</span>
+			<span><i class="sw" style="border-color:var(--object)"></i>object (what the test calls)</span>
+			<span><i class="sw" style="border-color:var(--closure)"></i>fields on <code>this</code></span>
+			<span><i class="sw" style="border-color:var(--error)"></i>pitfall</span>
+			<span><i class="sw" style="border-color:var(--builtin)"></i>Playwright page</span>
+			<span><i class="ln" style="border-color:var(--call)"></i>call / new</span>
+			<span><i class="ln" style="border-color:var(--creates)"></i>constructor sets this.*</span>
+			<span><i class="ln" style="border-color:var(--returns)"></i>new returns the object</span>
+			<span><i class="ln" style="border-color:var(--uses)"></i>method reads this.*</span>
+			<span><i class="ln" style="border-color:var(--browser)"></i>works in the browser</span>
+		</div>
+	</section>
+
+	<div class="side">
+		<section class="card now" id="now"></section>
+		<section class="card">
+			<h2>Code running now</h2>
+			<div class="file" id="file"></div>
+			<pre class="code" id="code"></pre>
+		</section>
+		<section class="card">
+			<h2>Object state <span style="text-transform:none;letter-spacing:0">(fields each object keeps on <code>this</code>, and the methods it shares)</span></h2>
+			<div class="memory" id="memory"></div>
+		</section>
+		<section class="card">
+			<h2>All steps</h2>
+			<ol class="timeline" id="timeline"></ol>
+		</section>
+	</div>
+</main>
+
+<footer>
+	Files: <code>1-page-object-model/page-objects/LoginPage.ts</code>, <code>1-page-object-model/page-objects/TasksPage.ts</code>, <code>1-page-object-model/tests/tasks.spec.ts</code>. The snippets in the "compare" steps are for comparison only; they are not in the repository.
+	Keyboard: <code>←</code> <code>→</code> step, <code>Space</code> play/pause, <code>1</code> <code>2</code> <code>3</code> pick a flow, <code>I</code> show/hide the basics panel.
+	<nav>All walkthroughs: <a href="../1-page-object-model/pom-flow.html" class="here">Page Object Model</a> · <a href="../2-functional-helpers/helpers-flow.html">Functional helpers</a> · <a href="../3-fixtures/fixture-flow.html">Fixtures</a> · <a href="../4-factory-functions/factory-flow.html">Factory functions</a> · <a href="../5-combined/combined-flow.html">Combined</a></nav>
+</footer>
+
+<script>
+// ===================================================================================
+// 1. GRAPH: two lanes (LoginPage, TasksPage) plus a "pitfall" lane at the bottom
+// ===================================================================================
+const NODES = {
+	spec:        { x: 70,  y: 345, w: 110, h: 560, kind: 'test', label: 'TEST', sub: 'tasks.spec.ts' },
+	loginCls:    { x: 290, y: 120, w: 200, kind: 'cls', label: 'class LoginPage', sub: 'LoginPage.ts', badge: 'CLASS · BLUEPRINT' },
+	loginObj:    { x: 560, y: 200, w: 200, kind: 'object', label: 'loginPage', sub: 'navigate() · login()', badge: 'OBJECT (new)' },
+	loginFields: { x: 795, y: 120, w: 180, kind: 'state', label: 'this.*', sub: 'page + 4 locators', badge: 'FIELDS' },
+	tasksCls:    { x: 290, y: 310, w: 200, kind: 'cls', label: 'class TasksPage', sub: 'TasksPage.ts', badge: 'CLASS · BLUEPRINT' },
+	tasksObj:    { x: 560, y: 390, w: 200, kind: 'object', label: 'tasksPage', sub: 'addTask() · task() …', badge: 'OBJECT (new)' },
+	tasksFields: { x: 795, y: 310, w: 180, kind: 'state', label: 'this.*', sub: 'page + 4 locators', badge: 'FIELDS' },
+	detached:    { x: 330, y: 565, w: 260, kind: 'error', label: 'const { addTask }', sub: '= tasksPage  (method copied out)', badge: 'PITFALL' },
+	thisUndef:   { x: 640, y: 565, w: 210, kind: 'error', label: 'this = undefined', sub: 'addTask() → TypeError', badge: 'RESULT' },
+	page:        { x: 950, y: 345, w: 90,  h: 560, kind: 'builtin', label: 'page', sub: 'browser tab' },
+};
+const H = 60;
+const FINISHING = ['cls'];
+const MEMORY_EMPTY = 'empty: no page object has been created yet';
+
+const EDGES = [
+	['spec', 'loginCls', 'call'], ['spec', 'tasksCls', 'call'], ['spec', 'loginObj', 'call'], ['spec', 'tasksObj', 'call'],
+	['loginCls', 'loginFields', 'creates'], ['loginCls', 'loginObj', 'returns'],
+	['tasksCls', 'tasksFields', 'creates'], ['tasksCls', 'tasksObj', 'returns'],
+	['loginObj', 'loginFields', 'uses'], ['tasksObj', 'tasksFields', 'uses'],
+	['loginFields', 'page', 'browser'], ['tasksFields', 'page', 'browser'],
+	['loginObj', 'page', 'browser'], ['tasksObj', 'page', 'browser'],
+	['spec', 'detached', 'call'], ['detached', 'thisUndef', 'uses'],
+];
+const TEMP = {};
+
+// ===================================================================================
+// 2. CODE SNIPPETS: copied from the real files, with their real line numbers.
+// ===================================================================================
+const CODE = {
+	"spec": {
+		"file": "1-page-object-model/tests/tasks.spec.ts",
+		"start": 7,
+		"lines": [
+			"test.describe('TaskBoard - Page Object Model', () => {",
+			"  let loginPage: LoginPage;",
+			"  let tasksPage: TasksPage;",
+			"",
+			"  test.beforeEach(async ({ page }) => {",
+			"    // Playwright supplies a fresh page for this test; the objects wrap that page.",
+			"    loginPage = new LoginPage(page);",
+			"    tasksPage = new TasksPage(page);",
+			"    await loginPage.navigate();",
+			"  });"
+		]
+	},
+	"specWrong": {
+		"file": "1-page-object-model/tests/tasks.spec.ts",
+		"start": 25,
+		"lines": [
+			"  test('shows an error for a wrong password', async () => {",
+			"    await loginPage.login('alex', 'wrong-password');",
+			"",
+			"    await expect(loginPage.errorMessage).toHaveText('Wrong username or password.');",
+			"  });"
+		]
+	},
+	"specDelete": {
+		"file": "1-page-object-model/tests/tasks.spec.ts",
+		"start": 52,
+		"lines": [
+			"  test('deletes a task', async () => {",
+			"    await loginPage.login('alex', 'secret123');",
+			"    await tasksPage.addTask('Buy milk');",
+			"    await tasksPage.addTask('Buy milk and eggs');",
+			"",
+			"    await tasksPage.deleteTask('Buy milk');",
+			"",
+			"    await expect(tasksPage.task('Buy milk')).toHaveCount(0);",
+			"    await expect(tasksPage.task('Buy milk and eggs')).toBeVisible();",
+			"  });"
+		]
+	},
+	"login": {
+		"file": "1-page-object-model/page-objects/LoginPage.ts",
+		"start": 5,
+		"lines": [
+			"export class LoginPage {",
+			"  private readonly usernameInput: Locator;",
+			"  private readonly passwordInput: Locator;",
+			"  private readonly signInButton: Locator;",
+			"",
+			"  // Public readonly locators are assertion targets. They hide selector details while letting",
+			"  // tests use Playwright's retrying, web-first assertions.",
+			"  readonly errorMessage: Locator;",
+			"",
+			"  constructor(private readonly page: Page) {",
+			"    this.usernameInput = page.locator('#username');",
+			"    this.passwordInput = page.locator('#password');",
+			"    this.signInButton = page.getByRole('button', { name: 'Sign in' });",
+			"    this.errorMessage = page.locator('#login-error');",
+			"  }",
+			"",
+			"  async navigate(): Promise<void> {",
+			"    await this.page.goto(pathToFileURL(resolve(__dirname, '../../../pages/login.html')).href);",
+			"  }",
+			"",
+			"  async login(username: string, password: string): Promise<void> {",
+			"    await this.usernameInput.fill(username);",
+			"    await this.passwordInput.fill(password);",
+			"    await this.signInButton.click();",
+			"  }",
+			"}"
+		]
+	},
+	"tasks": {
+		"file": "1-page-object-model/page-objects/TasksPage.ts",
+		"start": 3,
+		"lines": [
+			"export class TasksPage {",
+			"  // Public locators support retrying assertions in tests; interaction locators stay private.",
+			"  readonly heading: Locator;",
+			"  readonly counter: Locator;",
+			"  private readonly newTaskInput: Locator;",
+			"  private readonly addTaskButton: Locator;",
+			"",
+			"  constructor(private readonly page: Page) {",
+			"    this.heading = page.getByRole('heading', { level: 1 });",
+			"    this.newTaskInput = page.getByLabel('New task');",
+			"    this.addTaskButton = page.getByRole('button', { name: 'Add task' });",
+			"    this.counter = page.getByRole('status');",
+			"  }",
+			"",
+			"  // Match the task by its exact accessible checkbox name so \"Buy milk\" won't match",
+			"  // a different task such as \"Buy milk and eggs\".",
+			"  task(title: string): Locator {",
+			"    const taskCheckbox = this.page.getByRole('checkbox', { name: title, exact: true });",
+			"    // Return the list item containing the exact checkbox for the task.",
+			"    return this.page.getByRole('listitem').filter({ has: taskCheckbox });",
+			"  }",
+			"",
+			"  async addTask(title: string): Promise<void> {",
+			"    await this.newTaskInput.fill(title);",
+			"    await this.addTaskButton.click();",
+			"  }",
+			"",
+			"  async completeTask(title: string): Promise<void> {",
+			"    await this.task(title).getByRole('checkbox').check();",
+			"  }",
+			"",
+			"  async deleteTask(title: string): Promise<void> {",
+			"    await this.task(title)",
+			"      .getByRole('button', { name: `Delete ${title}`, exact: true })",
+			"      .click();",
+			"  }",
+			"}"
+		]
+	},
+	"privateCompare": {
+		"file": "Comparison only: what the compiler allows in a test",
+		"numbered": [
+			[
+				1,
+				"// Public API: fine"
+			],
+			[
+				2,
+				"await loginPage.login('alex', 'wrong-password');"
+			],
+			[
+				3,
+				"await expect(loginPage.errorMessage).toHaveText('...');"
+			],
+			[
+				4,
+				""
+			],
+			[
+				5,
+				"await loginPage.usernameInput.fill('alex');"
+			],
+			[
+				6,
+				"// TS2341: Property 'usernameInput' is private and only"
+			],
+			[
+				7,
+				"//         accessible within class 'LoginPage'."
+			],
+			[
+				8,
+				"loginPage.errorMessage = page.locator('#other');"
+			],
+			[
+				9,
+				"// TS2540: Cannot assign to 'errorMessage' because it"
+			],
+			[
+				10,
+				"//         is a read-only property."
+			]
+		]
+	},
+	"thisCompare": {
+		"file": "Comparison only: calling a method with and without its object",
+		"numbered": [
+			[
+				1,
+				"// Called through the object: this = tasksPage"
+			],
+			[
+				2,
+				"await tasksPage.addTask('Buy milk');"
+			],
+			[
+				3,
+				""
+			],
+			[
+				4,
+				"// Detached: only the function is copied, not the object"
+			],
+			[
+				5,
+				"const { addTask } = tasksPage;"
+			],
+			[
+				6,
+				"await addTask('Buy milk');"
+			],
+			[
+				7,
+				"// TypeError: Cannot read properties of undefined"
+			],
+			[
+				8,
+				"//            (reading 'newTaskInput')"
+			],
+			[
+				9,
+				""
+			],
+			[
+				10,
+				"// Fix: call it through the object (or bind it)"
+			],
+			[
+				11,
+				"const add = tasksPage.addTask.bind(tasksPage);"
+			]
+		]
+	}
+};
+
+// ===================================================================================
+// 3. OBJECT STATE: the fields each object holds (on `this`) and the methods it shares
+// ===================================================================================
+const SCOPES = {
+	loginPage: { kind: 'state', title: 'loginPage = new LoginPage(page)', note: 'object #1', label: 'fields on this',
+		vars: [['page', "private · this test's Page"], ['usernameInput', 'private · Locator (lazy)'], ['passwordInput', 'private · Locator (lazy)'],
+			['signInButton', 'private · Locator (lazy)'], ['errorMessage', 'public readonly · Locator']],
+		returns: ['navigate', 'login'], pubLabel: 'methods (shared, on LoginPage.prototype):' },
+	tasksPage: { kind: 'state', title: 'tasksPage = new TasksPage(page)', note: 'object #2', label: 'fields on this',
+		vars: [['page', 'private · the SAME Page'], ['heading', 'public readonly · Locator'], ['counter', 'public readonly · Locator'],
+			['newTaskInput', 'private · Locator (lazy)'], ['addTaskButton', 'private · Locator (lazy)']],
+		returns: ['task', 'addTask', 'completeTask', 'deleteTask'], pubLabel: 'methods (shared, on TasksPage.prototype):' },
+};
+
+// ===================================================================================
+// 4. FLOWS
+//    Node states: idle | unused | running | used | busy | alive | finished | error | done
+// ===================================================================================
+const PHASES = {
+	start: ['start', '#94a3b8'], call: ['call', '#fb923c'], create: ['constructor', '#fbbf24'], ret: ['new returns', '#34d399'],
+	browser: ['browser', '#60a5fa'], compare: ['compare', '#f87171'], done: ['done', '#22c55e'],
+};
+
+// State after beforeEach, reused as the starting point of flows 2 and 3.
+const AFTER_BEFORE_EACH = {
+	spec: 'used', loginCls: 'finished', tasksCls: 'finished', loginObj: 'alive', loginFields: 'alive',
+	tasksObj: 'alive', tasksFields: 'alive', page: 'alive', detached: 'unused', thisUndef: 'unused',
+};
+
+const FLOWS = [
+	{ id: 'create', name: 'Flow 1 · Create the objects', hint: 'beforeEach · new + constructor',
+		edges: ['spec>loginCls', 'loginCls>loginFields', 'loginCls>loginObj', 'spec>tasksCls', 'tasksCls>tasksFields', 'tasksCls>tasksObj', 'spec>loginObj', 'loginObj>loginFields', 'loginFields>page'],
+		steps: [
+			{ phase: 'start', title: 'beforeEach receives the page',
+				text: `Playwright creates a fresh <code>page</code> (a built-in fixture) and passes it to <code>beforeEach</code>. The variables <code>loginPage</code> and <code>tasksPage</code> are declared, but they are still <code>undefined</code>.`,
+				set: { spec: 'used', page: 'alive', detached: 'unused', thisUndef: 'unused' }, edges: [], code: ['spec', [8, 9, 11, 12]], mem: [] },
+			{ phase: 'call', title: 'new LoginPage(page)',
+				text: `<code>new</code> does three things: it creates an <b>empty object</b>, runs the <code>constructor</code> with <code>this</code> pointing at that object, and returns it. The <b>class</b> is only the blueprint; the <b>object</b> is what the test uses.`,
+				set: { loginCls: 'running' }, edges: [['spec>loginCls', 'call']], code: ['login', [5, 14]] },
+			{ phase: 'create', title: 'The constructor fills this with fields',
+				text: `<code>constructor(private readonly page: Page)</code> is a TypeScript shortcut: it saves the argument as <code>this.page</code>. Then the constructor builds three <b>private</b> locators and one <b>public readonly</b> <code>errorMessage</code>. Creating a locator is <b>lazy</b>: nothing happens in the browser yet.`,
+				set: { loginFields: 'running' }, edges: [['loginCls>loginFields', 'creates']], code: ['login', [6, 7, 8, 12, 14, 15, 16, 17, 18]],
+				mem: ['loginPage'], hl: ['loginPage.page', 'loginPage.usernameInput', 'loginPage.passwordInput', 'loginPage.signInButton', 'loginPage.errorMessage'] },
+			{ phase: 'ret', title: 'new returns the object: loginPage',
+				text: `The <b>fields</b> (data) live on each object. The <b>methods</b> are not copied: they live once on <code>LoginPage.prototype</code> and every object shares them. That is why a method needs <code>this</code>: it tells the shared code <b>which object's</b> fields to use.`,
+				set: { loginObj: 'running' }, edges: [['loginCls>loginObj', 'returns']], code: ['spec', [13]],
+				mem: ['loginPage'], hl: ['loginPage.navigate', 'loginPage.login'] },
+			{ phase: 'create', title: 'new TasksPage(page): a second object',
+				text: `Same steps for the task list: the <b>same</b> <code>page</code>, but a separate object with its own fields. One class per page keeps each class small and easy to find.`,
+				set: { tasksCls: 'running', tasksFields: 'alive', tasksObj: 'alive' },
+				edges: [['spec>tasksCls', 'call'], ['tasksCls>tasksFields', 'creates'], ['tasksCls>tasksObj', 'returns']], code: ['tasks', [10, 11, 12, 13, 14]],
+				mem: ['loginPage', 'tasksPage'], hl: ['tasksPage.page', 'tasksPage.heading', 'tasksPage.counter', 'tasksPage.newTaskInput', 'tasksPage.addTaskButton'] },
+			{ phase: 'call', title: 'loginPage.navigate(): the dot sets this',
+				text: `<code>loginPage.navigate()</code> calls the shared method <b>and</b> sets <code>this = loginPage</code> for this one call. The object before the dot decides what <code>this</code> is.`,
+				set: { loginObj: 'used' }, edges: [['spec>loginObj', 'call']], code: ['spec', [15]], mem: ['loginPage', 'tasksPage'], hl: ['loginPage.navigate'] },
+			{ phase: 'browser', title: 'navigate() reads this.page',
+				text: `Inside the method, <code>this.page</code> is the page stored by the constructor. Now the browser really navigates to the sign-in page.`,
+				set: { loginFields: 'used', page: 'busy' }, status: { page: 'goto' },
+				edges: [['loginObj>loginFields', 'uses'], ['loginFields>page', 'browser']], code: ['login', [21, 22, 23]],
+				mem: ['loginPage', 'tasksPage'], hl: ['loginPage.page'] },
+			{ phase: 'done', title: 'beforeEach is done: two ready objects',
+				text: `Each test body now starts with <code>loginPage</code> and <code>tasksPage</code> and never sees a selector. The next test runs <code>beforeEach</code> again: <b>new page, new objects</b>. This setup is <b>manual</b>: every spec file repeats it. Fixtures can do it for you (see the combined walkthrough).`,
+				set: { spec: 'done', page: 'alive' }, edges: [], code: ['spec', [11, 12, 13, 14, 15, 16]], mem: ['loginPage', 'tasksPage'] },
+		] },
+
+	{ id: 'private', name: 'Flow 2 · Public vs private', hint: 'wrong password · assert in the test',
+		edges: ['spec>loginObj', 'loginObj>loginFields', 'loginFields>page', 'loginObj>page'],
+		steps: [
+			{ phase: 'start', title: 'beforeEach already ran (flow 1)',
+				text: `Test: <b>"shows an error for a wrong password"</b>. <code>loginPage</code> exists and the sign-in page is open. The test body does not even ask for <code>{ page }</code>: it only talks to page objects.`,
+				set: AFTER_BEFORE_EACH, edges: [], code: ['specWrong', [25]], mem: ['loginPage', 'tasksPage'] },
+			{ phase: 'call', title: "loginPage.login('alex', 'wrong-password')",
+				text: `One method, one user intent: "sign in as alex with this password". The method name says <b>what</b> the user does, not which buttons are clicked.`,
+				set: { loginObj: 'used' }, edges: [['spec>loginObj', 'call']], code: ['specWrong', [26]], mem: ['loginPage', 'tasksPage'], hl: ['loginPage.login'] },
+			{ phase: 'browser', title: 'login() uses the private locators through this',
+				text: `<code>this.usernameInput</code> means "the <code>usernameInput</code> field of the object this method was called on", here <code>loginPage</code>. Only now are the locators looked up in the page.`,
+				set: { loginFields: 'used', page: 'busy' }, status: { page: 'fill · fill · click' },
+				edges: [['loginObj>loginFields', 'uses'], ['loginFields>page', 'browser']], code: ['login', [25, 26, 27, 28]],
+				mem: ['loginPage', 'tasksPage'], hl: ['loginPage.usernameInput', 'loginPage.passwordInput', 'loginPage.signInButton'] },
+			{ phase: 'compare', title: 'private and readonly: the compiler guards the object',
+				text: `A <code>private</code> field can only be used inside the class, so a test can't reach <code>usernameInput</code>. <code>readonly</code> means a test can read <code>errorMessage</code> but can't replace it. Both are <b>TypeScript checks</b>: they keep the page object's public API small and honest.`,
+				set: {}, edges: [], code: ['privateCompare', [2, 3]], err: [5, 6, 7, 8, 9, 10],
+				mem: ['loginPage', 'tasksPage'], hl: ['loginPage.usernameInput', 'loginPage.errorMessage'] },
+			{ phase: 'browser', title: 'The assertion stays in the test',
+				text: `The page object <b>exposes</b> the locator; the test <b>decides</b> what is correct. With no <code>expect</code> inside the page object, the same <code>login()</code> works for both the happy path and the error path.`,
+				set: { page: 'busy' }, status: { page: 'expect' }, edges: [['spec>loginObj', 'call'], ['loginObj>page', 'browser']], code: ['specWrong', [28]],
+				mem: ['loginPage', 'tasksPage'], hl: ['loginPage.errorMessage'] },
+			{ phase: 'done', title: 'Passed',
+				text: `Selectors are hidden inside the class, actions are public methods, and assertion targets are public <b>readonly</b> locators. If the sign-in form changes, only <code>LoginPage.ts</code> changes.`,
+				set: { spec: 'done', page: 'alive' }, edges: [], code: ['specWrong', [25, 26, 27, 28, 29]], mem: ['loginPage', 'tasksPage'] },
+		] },
+
+	{ id: 'this', name: 'Flow 3 · Methods and this', hint: 'delete a task · detached method',
+		edges: ['spec>loginObj', 'loginObj>loginFields', 'loginFields>page', 'spec>tasksObj', 'tasksObj>tasksFields', 'tasksFields>page', 'tasksObj>page', 'spec>detached', 'detached>thisUndef'],
+		steps: [
+			{ phase: 'start', title: 'beforeEach already ran (flow 1)',
+				text: `Test: <b>"deletes a task"</b>. Two similar tasks, "Buy milk" and "Buy milk and eggs", check that the right one is deleted.`,
+				set: AFTER_BEFORE_EACH, edges: [], code: ['specDelete', [52]], mem: ['loginPage', 'tasksPage'] },
+			{ phase: 'browser', title: 'Setup through the UI: sign in, add two tasks',
+				text: `A POM test builds its starting state <b>through the UI</b>. That is realistic, but slow, and a broken sign-in page would fail every task test. (In the combined walkthrough, fixtures prepare this state without the UI.)`,
+				set: { loginObj: 'used', loginFields: 'used', tasksObj: 'used', tasksFields: 'used', page: 'busy' }, status: { page: 'sign in · add ×2' },
+				edges: [['spec>loginObj', 'call'], ['loginObj>loginFields', 'uses'], ['loginFields>page', 'browser'], ['spec>tasksObj', 'call'], ['tasksObj>tasksFields', 'uses'], ['tasksFields>page', 'browser']],
+				code: ['specDelete', [53, 54, 55]], mem: ['loginPage', 'tasksPage'], hl: ['loginPage.login', 'tasksPage.addTask', 'tasksPage.newTaskInput', 'tasksPage.addTaskButton'] },
+			{ phase: 'call', title: "tasksPage.deleteTask('Buy milk')",
+				text: `The test calls the method through the object, so inside <code>deleteTask</code>, <code>this</code> is <code>tasksPage</code>.`,
+				set: { tasksObj: 'used' }, edges: [['spec>tasksObj', 'call']], code: ['specDelete', [57]], mem: ['loginPage', 'tasksPage'], hl: ['tasksPage.deleteTask'] },
+			{ phase: 'browser', title: 'A method calls another method: this.task(title)',
+				text: `<code>deleteTask</code> reuses <code>this.task(title)</code>, which finds the list item by its <b>exact</b> checkbox name, so "Buy milk and eggs" is not matched. Then it clicks the Delete button inside that item.`,
+				set: { tasksFields: 'used', page: 'busy' }, status: { page: 'click Delete' },
+				edges: [['tasksObj>tasksFields', 'uses'], ['tasksFields>page', 'browser']], code: ['tasks', [19, 20, 22, 34, 35, 36, 37]],
+				mem: ['loginPage', 'tasksPage'], hl: ['tasksPage.task', 'tasksPage.deleteTask', 'tasksPage.page'] },
+			{ phase: 'browser', title: 'Assertions use the public task() method',
+				text: `<code>task()</code> is public because tests need it for assertions: the deleted task has <code>toHaveCount(0)</code>, and the similar task is still visible.`,
+				set: { page: 'busy' }, status: { page: 'expect' }, edges: [['spec>tasksObj', 'call'], ['tasksObj>page', 'browser']], code: ['specDelete', [59, 60]],
+				mem: ['loginPage', 'tasksPage'], hl: ['tasksPage.task'] },
+			{ phase: 'compare', title: 'Pitfall: a detached method loses this',
+				text: `<code>const { addTask } = tasksPage</code> copies only the <b>function</b>. Called bare, <code>addTask()</code> has no object before the dot, so <code>this</code> is <code>undefined</code> (class code always runs in strict mode) and <code>this.newTaskInput</code> throws a <b>TypeError</b>. Always call methods through the object. The lint rule <code>@typescript-eslint/unbound-method</code> catches this. Factory functions (folder 4) don't have this problem.`,
+				set: { detached: 'used', thisUndef: 'error' }, edges: [['spec>detached', 'call'], ['detached>thisUndef', 'error']], code: ['thisCompare', [1, 2, 10, 11]], err: [5, 6, 7, 8],
+				mem: ['loginPage', 'tasksPage'], hl: ['tasksPage.addTask', 'tasksPage.newTaskInput'] },
+			{ phase: 'done', title: 'Passed (the pitfall was only a comparison)',
+				text: `A POM object = <b>fields</b> on the object + <b>shared methods</b> on the class, joined by <code>this</code>. Strong points: autocomplete (<code>tasksPage.</code> lists every action), private selectors, one class per page. Watch out for: manual <code>beforeEach</code> setup, UI setup in every test, and detached methods.`,
+				set: { spec: 'done', page: 'alive', detached: 'unused', thisUndef: 'unused' }, edges: [], code: ['specDelete', [52, 53, 54, 55, 56, 57, 58, 59, 60, 61]], mem: ['loginPage', 'tasksPage'] },
+		] },
+];
+
+const STATUS = {
+	idle: '', unused: 'not used', running: 'running…', used: 'in use', busy: 'working', alive: 'in memory',
+	finished: 'constructed ✓', error: 'TypeError', done: '✓ passed',
+};
+
+
+// ===================================================================================
+// 5. RENDERING
+// ===================================================================================
+const $ = (id) => document.getElementById(id);
+const svgNS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => {
+	const node = document.createElementNS(svgNS, tag);
+	for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+	if (parent) parent.appendChild(node);
+	return node;
+};
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const nodeH = (n) => n.h ?? H;
+
+// Left-to-right curve. Tall nodes (spec, page) connect at the other node's height.
+function edgePath(fromId, toId) {
+	const a = NODES[fromId], b = NODES[toId];
+	const x1 = a.x + a.w / 2, x2 = b.x - b.w / 2 - 4;
+	const y1 = fromId === 'spec' ? b.y : a.y;
+	const y2 = toId === 'page' ? a.y : b.y;
+	const mx = (x1 + x2) / 2;
+	return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+}
+
+const EDGE_D = {};
+function drawGraph() {
+	for (const [from, to, kind, d] of EDGES) {
+		const id = `${from}>${to}`;
+		// An optional 4th value is a custom SVG path, for edges that don't run left to right.
+		EDGE_D[id] = d ?? edgePath(from, to);
+		el('path', { d: EDGE_D[id], class: `edge ${kind}`, id: `e-${id}`, 'marker-end': 'url(#arrow)' }, $('edges'));
+	}
+	for (const [id, n] of Object.entries(NODES)) {
+		const h = nodeH(n);
+		const g = el('g', { class: `node k-${n.kind} s-idle`, id: `n-${id}`, transform: `translate(${n.x},${n.y})` }, $('nodes'));
+		el('rect', { x: -n.w / 2, y: -h / 2, width: n.w, height: h, rx: 12 }, g);
+		if (n.badge) el('text', { class: 'badge', y: -h / 2 - 6 }, g).textContent = n.badge;
+		const ty = n.h ? -8 : -4;
+		el('text', { class: 'title', y: ty }, g).textContent = n.label;
+		el('text', { class: 'sub', y: ty + 17 }, g).textContent = n.sub;
+		el('text', { class: 'status', y: h / 2 + 15 }, g);
+	}
+}
+
+function highlight(line) {
+	const re = /(\/\/.*$)|('(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*")|\b(await|async|const|let|export|import|from|new|return|function|class|constructor|private|readonly|this|for|of|type|test|expect)\b/g;
+	let out = '', last = 0, m;
+	while ((m = re.exec(line))) {
+		out += escapeHtml(line.slice(last, m.index));
+		const cls = m[1] ? 'tok-c' : m[2] ? 'tok-s' : 'tok-k';
+		out += `<span class="${cls}">${escapeHtml(m[0])}</span>`;
+		last = re.lastIndex;
+	}
+	return out + escapeHtml(line.slice(last));
+}
+
+function renderCode([key, hl], err = []) {
+	const snip = CODE[key];
+	const rows = snip.numbered ?? snip.lines.map((t, i) => [snip.start + i, t]);
+	const parts = snip.file.split('/');
+	$('file').innerHTML = parts.length > 1
+		? `${escapeHtml(parts.slice(0, -1).join('/'))}/<b>${escapeHtml(parts.at(-1))}</b>` : `<b>${escapeHtml(snip.file)}</b>`;
+	$('code').innerHTML = rows.map(([n, t]) =>
+		`<span class="l${hl.includes(n) ? ' hl' : ''}${err.includes(n) ? ' err' : ''}"><span class="n">${n}</span>${highlight(t)}</span>`).join('');
+	// Scroll inside the code box only; scrollIntoView would also scroll the whole page.
+	const first = $('code').querySelector('.hl, .err');
+	if (first) $('code').scrollTop = Math.max(0, first.offsetTop - 40);
+}
+
+function renderMemory(mem, hl, prevMem) {
+	if (!mem.length) { $('memory').innerHTML = `<span class="empty">${MEMORY_EMPTY}</span>`; return; }
+	$('memory').innerHTML = mem.map((id) => {
+		const s = SCOPES[id];
+		const on = (name) => (hl.includes(`${id}.${name}`) ? ' hl' : '');
+		const vars = s.vars.map(([name, desc]) =>
+			`<span class="v${on(name)}">${name}</span><span class="d${on(name)}${s.override?.includes(name) ? ' ovr' : ''}">${escapeHtml(desc)}</span>`).join('');
+		const pub = s.returns
+			? `<div class="pub">${s.pubLabel ?? 'public (returned):'} ${s.returns.map((r) => `<span class="pill${on(r)}">${r}</span>`).join('')}</div>` : '';
+		const label = s.label ?? 'fields';
+		return `<div class="scope k-${s.kind}${prevMem.includes(id) ? ' kept' : ''}"><div class="scope-h">${escapeHtml(s.title)}<small>${s.note} · ${label}</small></div><div class="vars">${vars}</div>${pub}</div>`;
+	}).join('');
+}
+
+// ===================================================================================
+// 6. STATE MACHINE: replay steps 0..i so "back" and jumping always produce the right state
+// ===================================================================================
+let flow = FLOWS[0], index = 0, playing = false, timer = null, prevMem = [];
+const speed = () => Number($('speed').value);
+
+function stateAt(i) {
+	const nodes = Object.fromEntries(Object.keys(NODES).map((k) => [k, 'idle']));
+	let mem = [];
+	for (let s = 0; s <= i; s++) {
+		for (const k in nodes) {
+			if (nodes[k] === 'running') nodes[k] = FINISHING.includes(NODES[k].kind) ? 'finished' : 'alive';
+			if ((nodes[k] === 'used' || nodes[k] === 'busy') && k !== 'spec') nodes[k] = 'alive';
+		}
+		Object.assign(nodes, flow.steps[s].set);
+		if (flow.steps[s].mem) mem = flow.steps[s].mem;
+	}
+	return { nodes, mem };
+}
+
+let animToken = 0;
+function animateEdges(specs) {
+	const g = $('anims');
+	g.innerHTML = '';
+	const token = ++animToken;
+	const dur = 900 / speed();
+	specs.forEach(([edgeId, kind, reverse = false, temp = false], i) => {
+		const path = el('path', { d: temp ? TEMP[edgeId] : EDGE_D[edgeId], class: `anim ${kind}` }, g);
+		const len = path.getTotalLength();
+		path.style.strokeDasharray = `${len} ${len}`;
+		path.style.strokeDashoffset = len;
+		path.style.opacity = 0;
+		const dot = el('circle', { r: 6, class: `dot anim ${kind}`, fill: 'currentColor', opacity: 0 }, g);
+		const start = performance.now() + i * dur * 0.55;
+		const tick = (now) => {
+			if (token !== animToken) return;
+			const t = Math.min(1, Math.max(0, (now - start) / dur));
+			if (now >= start) {
+				const eased = 1 - Math.pow(1 - t, 3);
+				path.style.opacity = 1;
+				path.style.strokeDashoffset = len * (1 - eased);
+				const p = path.getPointAtLength(reverse ? len * (1 - eased) : len * eased);
+				dot.setAttribute('opacity', t < 1 ? 1 : 0);
+				dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+			}
+			if (t < 1) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+	return specs.length ? dur * (1 + 0.55 * (specs.length - 1)) : 0;
+}
+
+function render() {
+	const step = flow.steps[index];
+	const { nodes, mem } = stateAt(index);
+
+	for (const [id, state] of Object.entries(nodes)) {
+		const g = $(`n-${id}`);
+		g.setAttribute('class', `node k-${NODES[id].kind} s-${state}`);
+		g.querySelector('.status').textContent = step.status?.[id] ?? STATUS[state] ?? '';
+	}
+	for (const [from, to] of EDGES) {
+		const id = `${from}>${to}`;
+		$(`e-${id}`).classList.toggle('in-flow', flow.edges.includes(id));
+	}
+
+	const [phaseName, phaseColor] = PHASES[step.phase];
+	$('now').innerHTML = `<h2>What happens now</h2><span class="phase" style="background:${phaseColor}">${phaseName}</span>
+		<div class="text"><h3>${index + 1}. ${step.title}</h3><p>${step.text}</p></div>`;
+	renderCode(step.code, step.err);
+	renderMemory(mem, step.hl ?? [], prevMem);
+	prevMem = mem;
+
+	$('counter').textContent = `${index + 1} / ${flow.steps.length}`;
+	[...$('progress').children].forEach((d, i) => d.className = i < index ? 'past' : i === index ? 'current' : '');
+	[...$('timeline').children].forEach((li, i) => li.className = i < index ? 'past' : i === index ? 'current' : '');
+	const li = $('timeline').children[index];
+	$('timeline').scrollTop = Math.max(0, li.offsetTop - $('timeline').clientHeight / 2);
+
+	return animateEdges(step.edges);
+}
+
+function buildFlowUi() {
+	$('progress').innerHTML = flow.steps.map((s) => `<div style="background:${PHASES[s.phase][1]}" title="${PHASES[s.phase][0]}"></div>`).join('');
+	[...$('progress').children].forEach((d, i) => d.onclick = () => go(i));
+	$('timeline').innerHTML = flow.steps.map((s, i) =>
+		`<li><span class="num">${i + 1}</span><span class="pd" style="background:${PHASES[s.phase][1]}"></span><span>${escapeHtml(s.title)}</span></li>`).join('');
+	[...$('timeline').children].forEach((li, i) => li.onclick = () => go(i));
+	document.querySelectorAll('.flow-btn').forEach((b) => b.classList.toggle('active', b.dataset.id === flow.id));
+}
+
+function selectFlow(i) { stop(); flow = FLOWS[i]; index = 0; prevMem = []; buildFlowUi(); render(); }
+function go(i) { stop(); index = Math.max(0, Math.min(flow.steps.length - 1, i)); render(); }
+
+function schedule(animTime) {
+	clearTimeout(timer);
+	if (!playing) return;
+	timer = setTimeout(() => {
+		if (index >= flow.steps.length - 1) return stop();
+		index++;
+		schedule(render());
+	}, Math.max(animTime + 900 / speed(), 2800 / speed()));
+}
+function play() {
+	if (index >= flow.steps.length - 1) { index = 0; prevMem = []; }
+	playing = true; $('play').textContent = '⏸ Pause';
+	schedule(render());
+}
+function stop() { playing = false; clearTimeout(timer); $('play').textContent = '▶ Play'; }
+
+// ===================================================================================
+// 7. WIRING
+// ===================================================================================
+$('flows').innerHTML = FLOWS.map((f, i) => `<button class="flow-btn" data-id="${f.id}" data-i="${i}">${f.name}<small>${f.hint}</small></button>`).join('');
+document.querySelectorAll('.flow-btn').forEach((b) => b.onclick = () => selectFlow(Number(b.dataset.i)));
+$('play').onclick = () => (playing ? stop() : play());
+$('next').onclick = () => go(index + 1);
+$('prev').onclick = () => go(index - 1);
+$('reset').onclick = () => { prevMem = []; go(0); };
+document.addEventListener('keydown', (e) => {
+	if (e.target.tagName === 'SELECT') return;
+	// Let Space/Enter toggle the focused intro panel instead of starting the animation.
+	if (e.target.tagName === 'SUMMARY' && (e.key === ' ' || e.key === 'Enter')) return;
+	if (e.key === 'i' || e.key === 'I') { $('intro').open = !$('intro').open; return; }
+	if (e.key === 'ArrowRight') go(index + 1);
+	else if (e.key === 'ArrowLeft') go(index - 1);
+	else if (e.key === 'Home') { prevMem = []; go(0); }
+	else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
+	else if (['1', '2', '3'].includes(e.key)) selectFlow(Number(e.key) - 1);
+});
+
+drawGraph();
+selectFlow(0);
+</script>
+</body>
+</html>

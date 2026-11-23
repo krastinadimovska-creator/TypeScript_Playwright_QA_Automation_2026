@@ -9,6 +9,9 @@ npm install
 npx playwright install
 ```
 
+Tests run in Google Chrome and Firefox. Playwright uses the Chrome already installed on
+your computer; if it is missing, install it with `npx playwright install chrome`.
+
 ## Run tests
 
 ```bash
@@ -20,6 +23,16 @@ Tests run headlessly by default. To see the browser, run:
 ```bash
 npx playwright test --headed
 ```
+
+Every test runs in two browsers, Google Chrome and Firefox, configured as projects in
+[playwright.config.ts](playwright.config.ts). To run only one browser:
+
+```bash
+npx playwright test --project=chrome
+npx playwright test --project=firefox
+```
+
+The same commands are available as `npm run test:chrome` and `npm run test:firefox`.
 
 ## Lecture 2: Advanced interactions
 
@@ -91,4 +104,18 @@ Run the homework with:
 
 ```bash
 npx playwright test lectures/03-pom/homework
+```
+
+## Lecture 4 workshop: POM vs Functional Helpers vs Fixtures vs Factory Functions
+
+The [workshop notes](lectures/04-workshop/README.md) compare four ways to organize
+tests: the Page Object Model, functional helpers, fixtures (`test.extend`), and
+factory functions. Each pattern implements the same 5 scenarios for the small
+[TaskBoard app](lectures/04-workshop/pages/login.html), in its own folder under
+[patterns/](lectures/04-workshop/patterns/). The final `5-combined` demo uses all
+patterns together. [PATTERNS.md](lectures/04-workshop/PATTERNS.md) explains how each
+pattern works, with pros and cons. Run them with:
+
+```bash
+npx playwright test lectures/04-workshop
 ```

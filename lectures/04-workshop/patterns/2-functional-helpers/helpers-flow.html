@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Helpers Flow: how functional helpers, arguments and tests work together</title>
+<!--
+	Interactive teaching aid for Lecture 4 (folder 2-functional-helpers).
+	Open this file directly in a browser; it needs no server and no internet.
+	Code snippets are copied from the real files, with their real line numbers.
+-->
+<style>
+	:root {
+		--bg: #0f172a; --panel: #111c33; --panel-2: #16233f; --line: #3b5683; --text: #f8fafc; --muted: #cbd5e1; --dim: #a5b4cf;
+		--test: #60a5fa; --builtin: #94a3b8; --factory: #a78bfa; --object: #34d399; --closure: #fbbf24; --data: #2dd4bf; --pom: #f472b6; --error: #f87171;
+		--call: #fb923c; --creates: #fbbf24; --returns: #34d399; --uses: #fde68a; --browser: #60a5fa; --arg: #2dd4bf;
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+	header { padding: 18px 24px 8px; }
+	h1 { margin: 0 0 4px; font-size: 26px; }
+	h1 small { color: var(--muted); font-weight: 400; font-size: 16px; }
+	.rules { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+	.rules li { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-size: 15px; color: var(--muted); }
+	.rules b { color: var(--text); }
+	code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; color: #fde68a; background: #0b1224; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+	/* ---------- Intro panel: "What is a factory function?" ---------- */
+	.intro { margin: 12px 24px 4px; background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; }
+	.intro summary { list-style: none; cursor: pointer; padding: 12px 16px; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+	.intro summary::-webkit-details-marker { display: none; }
+	.intro summary::before { content: '▶'; color: var(--accent); font-size: 14px; transition: transform 0.2s; }
+	.intro[open] summary::before { transform: rotate(90deg); }
+	.intro summary small { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: auto; }
+	.intro summary:focus-visible { outline: 2px solid var(--accent); border-radius: 14px; }
+	.intro-body { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; animation: fade 0.3s ease; }
+	@media (max-width: 900px) { .intro-body { grid-template-columns: 1fr; } }
+	.intro-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+	.intro-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--accent); }
+	.intro-card p { margin: 0 0 8px; font-size: 16px; }
+	.intro-card ul { margin: 0; padding-left: 20px; font-size: 16px; }
+	.intro-card li { margin: 3px 0; }
+	.intro-card pre { margin: 6px 0 8px; background: #070d1c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 14.5px/1.6 ui-monospace, Menlo, monospace; color: #f1f5f9; overflow-x: auto; }
+	.intro-card pre .c { color: #a5b4cf; font-style: italic; }
+	.intro-card pre .k { color: #d8b4fe; }
+	.intro-card pre .s { color: #86efac; }
+	.intro-card pre .u { color: #fde68a; font-weight: 700; }
+	.intro-card pre .e { color: #fca5a5; font-weight: 700; }
+	.intro-card.wide { grid-column: 1 / -1; }
+	.intro table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+	.intro th, .intro td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	.intro th { color: var(--muted); font-weight: 600; }
+	.intro .no h3 { color: var(--closure); }
+
+	/* ---------- Toolbar ---------- */
+	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 24px; position: sticky; top: 0; z-index: 5; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+	.flows { display: flex; gap: 6px; flex-wrap: wrap; }
+	.flow-btn { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 7px 14px; font-size: 15px; cursor: pointer; text-align: left; }
+	.flow-btn small { display: block; color: var(--muted); font-size: 13px; }
+	.flow-btn.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--panel-2); }
+	.controls { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+	.controls button, .controls select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; height: 38px; min-width: 42px; cursor: pointer; font-size: 16px; }
+	.controls button.primary { background: var(--accent-btn); border-color: var(--accent-btn); min-width: 100px; }
+	.counter { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+
+	.progress { display: flex; gap: 3px; padding: 8px 24px 0; }
+	.progress div { flex: 1; height: 8px; border-radius: 4px; opacity: 0.4; cursor: pointer; transition: opacity 0.2s, transform 0.2s; }
+	.progress div.past { opacity: 0.65; }
+	.progress div.current { opacity: 1; transform: scaleY(1.6); }
+
+	main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(420px, 1fr); gap: 16px; padding: 14px 24px 24px; align-items: start; }
+	.graph-card { position: sticky; top: 70px; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+	.card h2 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+	.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+	/* ---------- Graph ---------- */
+	svg { width: 100%; height: auto; display: block; }
+	.edge { fill: none; stroke: var(--line); stroke-width: 2; opacity: 0.4; transition: stroke 0.3s, opacity 0.3s; }
+	.edge.in-flow { opacity: 1; stroke: #6b86b8; stroke-width: 2.5; }
+	.edge.creates { stroke-dasharray: 2 5; }
+	.edge.uses { stroke-dasharray: 6 5; }
+	.anim { fill: none; stroke-width: 4; stroke-linecap: round; filter: drop-shadow(0 0 6px currentColor); }
+	.anim.call { stroke: var(--call); color: var(--call); }
+	.anim.creates { stroke: var(--creates); color: var(--creates); }
+	.anim.returns { stroke: var(--returns); color: var(--returns); }
+	.anim.uses { stroke: var(--uses); color: var(--uses); }
+	.anim.browser { stroke: var(--browser); color: var(--browser); }
+	.anim.arg { stroke: var(--arg); color: var(--arg); }
+	.dot { filter: drop-shadow(0 0 8px currentColor); }
+
+	.node rect { fill: #0b1224; stroke: var(--k); stroke-width: 2; transition: fill 0.3s, opacity 0.3s, stroke-width 0.3s; }
+	.node { --k: var(--builtin); transition: opacity 0.35s; }
+	.node .title { fill: var(--text); font: 700 16px ui-monospace, Menlo, monospace; text-anchor: middle; }
+	.node .sub { fill: var(--muted); font-size: 13px; text-anchor: middle; }
+	.node .status { font-size: 13.5px; font-weight: 700; text-anchor: middle; fill: var(--muted); }
+	.node .badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-anchor: middle; fill: var(--k); }
+	.k-test { --k: var(--test); } .k-builtin { --k: var(--builtin); } .k-factory { --k: var(--factory); }
+	.k-object { --k: var(--object); } .k-closure { --k: var(--closure); } .k-data { --k: var(--data); }
+
+	.s-idle { opacity: 0.55; }
+	.s-unused { opacity: 0.28; }
+	.s-running rect, .s-used rect, .s-busy rect { fill: color-mix(in srgb, var(--k) 30%, #0b1224); stroke-width: 3; animation: pulse 1s ease-in-out infinite; }
+	.s-running .status, .s-used .status, .s-busy .status, .s-alive .status { fill: var(--k); }
+	.s-alive rect { fill: color-mix(in srgb, var(--k) 16%, #0b1224); }
+	.s-finished { opacity: 0.7; }
+	.s-finished rect { stroke-dasharray: 5 4; }
+	.s-error rect { stroke: var(--error); fill: color-mix(in srgb, var(--error) 25%, #0b1224); stroke-width: 3; }
+	.s-error .status { fill: var(--error); }
+	.s-done rect { stroke: #22c55e; fill: color-mix(in srgb, #22c55e 18%, #0b1224); }
+	.s-done .status { fill: #22c55e; }
+	@keyframes pulse { 0%, 100% { filter: drop-shadow(0 0 2px var(--k)); } 50% { filter: drop-shadow(0 0 14px var(--k)); } }
+
+	.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 15px; color: var(--muted); }
+	.legend span { display: inline-flex; align-items: center; gap: 6px; }
+	.sw { width: 12px; height: 12px; border-radius: 3px; border: 2px solid; display: inline-block; }
+	.ln { width: 22px; height: 0; border-top: 3px solid; display: inline-block; }
+
+	/* ---------- Narration ---------- */
+	.phase { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 10px; border-radius: 999px; color: #0b1224; }
+	.now h3 { margin: 10px 0 8px; font-size: 20px; }
+	.now p { margin: 0; color: var(--text); font-size: 17px; line-height: 1.6; }
+	.now .text { animation: fade 0.35s ease; }
+	@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Code ---------- */
+	.file { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 6px; }
+	.file b { color: var(--text); }
+	pre.code { position: relative; max-height: 360px; overflow: auto; margin: 0; background: #070d1c; border: 1px solid var(--line); border-radius: 10px; padding: 8px 0; font: 14.5px/1.65 ui-monospace, Menlo, monospace; color: #f1f5f9; }
+	.code .l { display: block; padding: 0 12px 0 0; white-space: pre; border-left: 3px solid transparent; transition: background 0.3s; }
+	.code .l .n { display: inline-block; width: 42px; text-align: right; padding-right: 12px; color: var(--dim); user-select: none; }
+	.code .l.hl { background: var(--accent-hl); border-left-color: var(--accent); }
+	.code .l.hl .n { color: var(--text); font-weight: 700; }
+	.code .l.err { background: rgba(248, 113, 113, 0.28); border-left-color: var(--error); }
+	.tok-k { color: #d8b4fe; } .tok-s { color: #86efac; } .tok-c { color: #a5b4cf; font-style: italic; }
+
+	/* ---------- Closure memory ---------- */
+	.memory { display: flex; flex-direction: column; gap: 10px; }
+	.scope { border: 1px solid var(--k); border-radius: 10px; background: color-mix(in srgb, var(--k) 9%, #0b1224); padding: 8px 12px; animation: slide-in 0.4s ease; }
+	.scope.kept { animation: none; }
+	.scope-h { font: 700 15px ui-monospace, Menlo, monospace; color: var(--text); }
+	.scope-h small { font: 400 13px system-ui, sans-serif; color: var(--muted); margin-left: 6px; }
+	.vars { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: 14.5px; }
+	.vars .v { font-family: ui-monospace, Menlo, monospace; color: #fde68a; padding: 0 4px; border-radius: 4px; transition: background 0.3s; }
+	.vars .d { color: var(--muted); }
+	.vars .hl { background: rgba(251, 191, 36, 0.35); color: #fff; }
+	.vars .d.hl { background: none; color: var(--text); font-weight: 600; }
+	.vars .ovr { color: var(--data); font-weight: 700; }
+	.pub { font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+	.pill { font: 13.5px ui-monospace, Menlo, monospace; color: #0b1224; background: var(--object); border-radius: 999px; padding: 0 8px; transition: box-shadow 0.3s; }
+	.pill.hl { box-shadow: 0 0 0 2px #fff, 0 0 12px var(--object); }
+	.empty { color: var(--dim); font-size: 14px; font-style: italic; }
+	@keyframes slide-in { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Timeline ---------- */
+	ol.timeline { margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+	ol.timeline li { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--dim); font-size: 15px; }
+	ol.timeline li:hover { background: var(--panel-2); }
+	ol.timeline li.current { background: var(--accent-deep); color: #fff; font-weight: 700; }
+	ol.timeline li.past { color: var(--text); }
+	ol.timeline .pd { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: translateY(1px); }
+	ol.timeline .num { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 18px; }
+
+	footer { padding: 0 24px 28px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+	@media (max-width: 1100px) { main { grid-template-columns: 1fr; } .graph-card { position: static; } }
+
+	footer a { color: var(--test); }
+	footer nav { margin-top: 6px; }
+	footer nav a.here { color: var(--text); font-weight: 700; text-decoration: none; }
+	.edge.needs { stroke-dasharray: 8 4; }
+	.edge.request { stroke-dasharray: 3 4; }
+	.anim.needs { stroke: var(--needs); color: var(--needs); }
+	.anim.request { stroke: var(--request); color: var(--request); }
+	.anim.error { stroke: var(--error); color: var(--error); }
+
+	:root { --accent: #22d3ee; --accent-hl: rgba(34, 211, 238, 0.24); --accent-btn: #0e7490; --accent-deep: #164e63; --needs: #e879f9; --request: #7dd3fc; }
+	.k-action { --k: var(--accent); } .k-locator { --k: var(--data); } .k-frame { --k: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+	<h1>Helpers Flow <small>how a test calls plain functions, passes them <code>page</code>, and why they remember nothing</small></h1>
+	<ul class="rules">
+		<li><b>1.</b> A helper is a plain <b>exported function</b>: import it and call it</li>
+		<li><b>2.</b> It gets <code>page</code> and test data as <b>arguments</b>, every time</li>
+		<li><b>3.</b> It keeps <b>no state</b>: arguments live only while it runs</li>
+		<li><b>4.</b> <b>Action</b> helpers act; <b>locator</b> helpers return a Locator for <code>expect</code> in the test</li>
+	</ul>
+</header>
+
+<!-- Collapsible theory panel. Closed by default so the animation stays on screen; toggle with a click or the "I" key. -->
+<details class="intro" id="intro">
+	<summary>What is a functional helper? The basics in 2 minutes <small>click or press <code>I</code> to show / hide</small></summary>
+	<div class="intro-body">
+		<div class="intro-card">
+			<h3>1. The idea in one sentence</h3>
+			<p>A <b>functional helper</b> is a plain <b>exported function</b> that takes <code>page</code> (and test data) as <b>arguments</b> and does one user action, or returns one Locator.</p>
+			<p>Analogy: a recipe card. It tells you the steps, but you bring the kitchen (<code>page</code>) and the ingredients (data) every time.</p>
+		</div>
+
+		<div class="intro-card">
+			<h3>2. Anatomy of a helper module</h3>
+<pre><span class="c">// helpers/tasks.ts</span>
+<span class="k">export function</span> taskItem(<span class="u">page</span>: Page, title: string): Locator {
+  <span class="k">return</span> <span class="u">page</span>.getByRole(<span class="s">'listitem'</span>).filter({ ... });
+}
+
+<span class="k">export async function</span> addTask(<span class="u">page</span>: Page, title: string) {
+  <span class="k">await</span> <span class="u">page</span>.getByLabel(<span class="s">'New task'</span>).fill(title);
+  <span class="k">await</span> <span class="u">page</span>.getByRole(<span class="s">'button'</span>, { name: <span class="s">'Add task'</span> }).click();
+}
+
+<span class="c">// tests/tasks.spec.ts</span>
+<span class="k">import</span> { addTask, taskItem } <span class="k">from</span> <span class="s">'../helpers/tasks'</span>;
+<span class="k">await</span> addTask(<span class="u">page</span>, <span class="s">'Buy milk'</span>);</pre>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>3. Two kinds of helpers</h3>
+			<table>
+				<tr><th>Kind</th><th>Looks like</th><th>Returns</th><th>Used for</th></tr>
+				<tr><td><b>Action helper</b></td><td><code>async function login(page, user, pass)</code></td><td><code>Promise&lt;void&gt;</code></td><td>doing something in the browser; always <code>await</code> it</td></tr>
+				<tr><td><b>Locator helper</b></td><td><code>function taskCounter(page)</code></td><td><code>Locator</code></td><td>finding an element; the <b>test</b> passes it to <code>expect</code></td></tr>
+				<tr><td><b>Workflow helper</b></td><td><code>async function addTasks(page, titles)</code></td><td><code>Promise&lt;void&gt;</code></td><td>several small helpers combined into one step</td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card">
+			<h3>4. When does a helper run?</h3>
+			<ul>
+				<li><b>Only when you call it.</b> There is no setup: import it and call it.</li>
+				<li><b>Arguments live only during the call.</b> When it returns, it forgets everything.</li>
+				<li><b>Nothing is created per test</b>, so there is nothing to clean up and no state shared between tests.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card">
+			<h3>5. What goes in, what stays out</h3>
+			<ul>
+				<li><b>In:</b> <code>page</code> (or a <code>Locator</code>) and test data, as arguments.</li>
+				<li><b>In the helper:</b> selectors and the click/fill steps.</li>
+				<li><b>Out:</b> <code>expect(...)</code>: keep it in the test.</li>
+				<li><b>Out:</b> module-level variables like <code>let currentPage</code>: they break isolation.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>6. Where helpers are used in real projects</h3>
+			<table>
+				<tr><th>Need</th><th>Helper example</th></tr>
+				<tr><td>Common actions</td><td><code>login(page, user)</code>, <code>logout(page)</code>, <code>acceptCookies(page)</code></td></tr>
+				<tr><td>Forms</td><td><code>fillAddress(page, address)</code>: one object of data, many fields</td></tr>
+				<tr><td>Components</td><td><code>pickDate(datePicker: Locator, '2026-05-01')</code>: take a <b>Locator</b>, so it works for every date picker</td></tr>
+				<tr><td>Tables and lists</td><td><code>rowByText(page, 'Alex')</code> returns a Locator for assertions</td></tr>
+				<tr><td>API setup</td><td><code>createUser(request, data)</code> with Playwright's <code>request</code> instead of <code>page</code></td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card">
+			<h3>7. Why use helpers?</h3>
+			<ul>
+				<li><b>Very little code:</b> no class, no constructor, no <code>this</code>.</li>
+				<li><b>Easy to compose:</b> helpers call helpers.</li>
+				<li><b>Explicit:</b> the call shows every input.</li>
+				<li><b>Safe to pass around:</b> no <code>this</code> to lose.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card no">
+			<h3>8. Watch out for</h3>
+			<ul>
+				<li><b><code>page</code> in every call:</b> repetitive in long tests.</li>
+				<li><b>Flat namespace:</b> many imports, name clashes. <code>import * as tasks from</code> helps.</li>
+				<li><b>No encapsulation:</b> nothing stops raw selectors in tests.</li>
+				<li><b>One giant <code>utils.ts</code>:</b> group helpers by page or feature.</li>
+			</ul>
+			<p style="margin-top:8px">Rule of thumb: <b>a helper does one thing, gets everything it needs as arguments, and remembers nothing.</b></p>
+		</div>
+	</div>
+</details>
+
+<div class="toolbar">
+	<div class="flows" id="flows"></div>
+	<div class="controls">
+		<button id="reset" title="Restart (Home)">⏮</button>
+		<button id="prev" title="Previous step (←)">◀</button>
+		<button id="play" class="primary" title="Play / pause (Space)">▶ Play</button>
+		<button id="next" title="Next step (→)">▶|</button>
+		<span class="counter" id="counter"></span>
+		<select id="speed" title="Speed">
+			<option value="0.6">0.6×</option>
+			<option value="1" selected>1×</option>
+			<option value="1.6">1.6×</option>
+		</select>
+	</div>
+</div>
+<div class="progress" id="progress"></div>
+
+<main>
+	<section class="card graph-card">
+		<h2>What calls what <span style="text-transform:none;letter-spacing:0">(test → helper(page, data) → page)</span></h2>
+		<svg id="graph" viewBox="0 40 1000 610" role="img" aria-label="Functional helpers call graph">
+			<defs>
+				<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b5683"/></marker>
+			</defs>
+			<g id="edges"></g>
+			<g id="anims"></g>
+			<g id="nodes"></g>
+		</svg>
+		<div class="legend">
+			<span><i class="sw" style="border-color:var(--test)"></i>test (spec file)</span>
+			<span><i class="sw" style="border-color:var(--accent)"></i>action helper</span>
+			<span><i class="sw" style="border-color:var(--data)"></i>locator helper</span>
+			<span><i class="sw" style="border-color:var(--builtin)"></i>Playwright page</span>
+			<span><i class="ln" style="border-color:var(--call)"></i>call (with page + data)</span>
+			<span><i class="ln" style="border-color:var(--returns)"></i>returns a Locator</span>
+			<span><i class="ln" style="border-color:var(--browser)"></i>works in the browser</span>
+		</div>
+	</section>
+
+	<div class="side">
+		<section class="card now" id="now"></section>
+		<section class="card">
+			<h2>Code running now</h2>
+			<div class="file" id="file"></div>
+			<pre class="code" id="code"></pre>
+		</section>
+		<section class="card">
+			<h2>Call stack <span style="text-transform:none;letter-spacing:0">(what exists while a helper runs; the top frame is running now)</span></h2>
+			<div class="memory" id="memory"></div>
+		</section>
+		<section class="card">
+			<h2>All steps</h2>
+			<ol class="timeline" id="timeline"></ol>
+		</section>
+	</div>
+</main>
+
+<footer>
+	Files: <code>2-functional-helpers/helpers/auth.ts</code>, <code>2-functional-helpers/helpers/tasks.ts</code>, <code>2-functional-helpers/tests/tasks.spec.ts</code>. The snippets in the "compare" steps are for comparison only; they are not in the repository.
+	Keyboard: <code>←</code> <code>→</code> step, <code>Space</code> play/pause, <code>1</code> <code>2</code> <code>3</code> pick a flow, <code>I</code> show/hide the basics panel.
+	<nav>All walkthroughs: <a href="../1-page-object-model/pom-flow.html">Page Object Model</a> · <a href="../2-functional-helpers/helpers-flow.html" class="here">Functional helpers</a> · <a href="../3-fixtures/fixture-flow.html">Fixtures</a> · <a href="../4-factory-functions/factory-flow.html">Factory functions</a> · <a href="../5-combined/combined-flow.html">Combined</a></nav>
+</footer>
+
+<script>
+// ===================================================================================
+// 1. GRAPH: the test calls plain functions; every function gets `page` as an argument
+// ===================================================================================
+const NODES = {
+	spec:         { x: 70,  y: 345, w: 110, h: 560, kind: 'test', label: 'TEST', sub: 'tasks.spec.ts' },
+	openLogin:    { x: 300, y: 95,  w: 220, kind: 'action', label: 'openLoginPage()', sub: 'auth.ts · (page)', badge: 'ACTION HELPER' },
+	login:        { x: 300, y: 195, w: 220, kind: 'action', label: 'login()', sub: 'auth.ts · (page, user, pass)', badge: 'ACTION HELPER' },
+	addTasks:     { x: 300, y: 295, w: 220, kind: 'action', label: 'addTasks()', sub: 'tasks.ts · (page, titles)', badge: 'ACTION HELPER' },
+	completeTask: { x: 300, y: 415, w: 220, kind: 'action', label: 'completeTask()', sub: 'tasks.ts · (page, title)', badge: 'ACTION HELPER' },
+	addTask:      { x: 620, y: 295, w: 200, kind: 'action', label: 'addTask()', sub: 'tasks.ts · (page, title)', badge: 'ACTION HELPER' },
+	taskItem:     { x: 620, y: 490, w: 200, kind: 'locator', label: 'taskItem()', sub: 'returns a Locator', badge: 'LOCATOR HELPER' },
+	locators:     { x: 330, y: 580, w: 280, kind: 'locator', label: 'welcomeHeading()', sub: 'taskCounter() · return Locators', badge: 'LOCATOR HELPERS' },
+	page:         { x: 950, y: 345, w: 90,  h: 560, kind: 'builtin', label: 'page', sub: 'browser tab' },
+};
+const H = 60;
+const FINISHING = ['action', 'locator'];
+const MEMORY_EMPTY = 'empty: no helper is running. Helpers remember nothing between calls.';
+
+const EDGES = [
+	['spec', 'openLogin', 'call'], ['spec', 'login', 'call'], ['spec', 'addTasks', 'call'], ['spec', 'completeTask', 'call'],
+	['spec', 'taskItem', 'call'], ['spec', 'locators', 'call'],
+	['addTasks', 'addTask', 'call'], ['completeTask', 'taskItem', 'call'],
+	['openLogin', 'page', 'browser'], ['login', 'page', 'browser'], ['addTask', 'page', 'browser'],
+	['completeTask', 'page', 'browser'], ['taskItem', 'page', 'browser'], ['locators', 'page', 'browser'],
+	// Raw locator in the test: drawn through the gap between the helper rows.
+	['spec', 'page', 'browser', 'M125,362 L901,362'],
+];
+const TEMP = {};
+
+// ===================================================================================
+// 2. CODE SNIPPETS: copied from the real files, with their real line numbers.
+// ===================================================================================
+const CODE = {
+	"spec": {
+		"file": "2-functional-helpers/tests/tasks.spec.ts",
+		"start": 1,
+		"lines": [
+			"import { test, expect } from '@playwright/test';",
+			"import { login, openLoginPage } from '../helpers/auth';",
+			"import { addTask, addTasks, completeTask, deleteTask, taskCounter, taskItem, welcomeHeading } from '../helpers/tasks';",
+			"",
+			"// Functional helpers: no classes or `this`; pass each function the page it needs.",
+			"test.describe('TaskBoard - Functional Helpers', () => {",
+			"  test.beforeEach(async ({ page }) => {",
+			"    await openLoginPage(page);",
+			"  });",
+			"",
+			"  test('signs in with valid credentials', async ({ page }) => {",
+			"    await login(page, 'alex', 'secret123');",
+			"",
+			"    await expect(welcomeHeading(page)).toHaveText('Hi, Alex!');",
+			"    await expect(taskCounter(page)).toHaveText('No tasks yet.');",
+			"  });"
+		]
+	},
+	"specWrong": {
+		"file": "2-functional-helpers/tests/tasks.spec.ts",
+		"start": 18,
+		"lines": [
+			"  test('shows an error for a wrong password', async ({ page }) => {",
+			"    await login(page, 'alex', 'wrong-password');",
+			"",
+			"    await expect(page.getByRole('alert')).toHaveText('Wrong username or password.');",
+			"  });"
+		]
+	},
+	"specComplete": {
+		"file": "2-functional-helpers/tests/tasks.spec.ts",
+		"start": 33,
+		"lines": [
+			"  test('completes a task', async ({ page }) => {",
+			"    await login(page, 'alex', 'secret123');",
+			"    await addTasks(page, ['Buy milk', 'Walk the dog']);",
+			"",
+			"    await completeTask(page, 'Buy milk');",
+			"",
+			"    await expect(taskItem(page, 'Buy milk').getByRole('checkbox')).toBeChecked();",
+			"    await expect(taskCounter(page)).toHaveText('1 task left');",
+			"  });"
+		]
+	},
+	"auth": {
+		"file": "2-functional-helpers/helpers/auth.ts",
+		"start": 5,
+		"lines": [
+			"// A focused navigation helper keeps the local file URL out of each test.",
+			"export async function openLoginPage(page: Page): Promise<void> {",
+			"  await page.goto(pathToFileURL(resolve(__dirname, '../../../pages/login.html')).href);",
+			"}",
+			"",
+			"// This module keeps no page or test state: dependencies and test data are explicit arguments.",
+			"export async function login(page: Page, username: string, password: string): Promise<void> {",
+			"  await page.getByLabel('Username').fill(username);",
+			"  await page.getByLabel('Password').fill(password);",
+			"  await page.getByRole('button', { name: 'Sign in' }).click();",
+			"}"
+		]
+	},
+	"tasks": {
+		"file": "2-functional-helpers/helpers/tasks.ts",
+		"start": 1,
+		"lines": [
+			"import { type Locator, type Page } from '@playwright/test';",
+			"",
+			"// Helpers keep no page state between calls; every dependency is passed explicitly.",
+			"export function taskItem(page: Page, title: string): Locator {",
+			"  const taskCheckbox = page.getByRole('checkbox', { name: title, exact: true });",
+			"  return page.getByRole('listitem').filter({ has: taskCheckbox });",
+			"}",
+			"",
+			"export function taskCounter(page: Page): Locator {",
+			"  return page.getByRole('status');",
+			"}",
+			"",
+			"export function welcomeHeading(page: Page): Locator {",
+			"  return page.getByRole('heading', { level: 1 });",
+			"}",
+			"",
+			"// Each action is a plain function; tests can see exactly which page it acts on.",
+			"export async function addTask(page: Page, title: string): Promise<void> {",
+			"  await page.getByLabel('New task').fill(title);",
+			"  await page.getByRole('button', { name: 'Add task' }).click();",
+			"}",
+			"",
+			"// Small helpers compose into bigger workflows.",
+			"export async function addTasks(page: Page, titles: string[]): Promise<void> {",
+			"  for (const title of titles) {",
+			"    await addTask(page, title);",
+			"  }",
+			"}",
+			"",
+			"export async function completeTask(page: Page, title: string): Promise<void> {",
+			"  await taskItem(page, title).getByRole('checkbox').check();",
+			"}",
+			"",
+			"export async function deleteTask(page: Page, title: string): Promise<void> {",
+			"  await taskItem(page, title).getByRole('button', { name: `Delete ${title}`, exact: true }).click();",
+			"}"
+		]
+	},
+	"compare": {
+		"file": "Comparison only: the same steps in two styles",
+		"numbered": [
+			[
+				1,
+				"// Functional helpers: page is passed on every call"
+			],
+			[
+				2,
+				"await login(page, 'alex', 'secret123');"
+			],
+			[
+				3,
+				"await addTasks(page, ['Buy milk', 'Walk the dog']);"
+			],
+			[
+				4,
+				"await completeTask(page, 'Buy milk');"
+			],
+			[
+				5,
+				""
+			],
+			[
+				6,
+				"// POM: page is given once, to the constructor"
+			],
+			[
+				7,
+				"await loginPage.login('alex', 'secret123');"
+			],
+			[
+				8,
+				"await tasksPage.addTask('Buy milk');"
+			],
+			[
+				9,
+				"await tasksPage.completeTask('Buy milk');"
+			],
+			[
+				10,
+				""
+			],
+			[
+				11,
+				"// Helpers have no this: copying them is always safe"
+			],
+			[
+				12,
+				"const add = addTask;"
+			],
+			[
+				13,
+				"await add(page, 'Buy milk');"
+			],
+			[
+				14,
+				""
+			],
+			[
+				15,
+				"// A missing helper: the selector leaks into the test"
+			],
+			[
+				16,
+				"await expect(page.getByRole('alert')).toHaveText('...');"
+			],
+			[
+				17,
+				"// Fix in auth.ts:"
+			],
+			[
+				18,
+				"export const loginError = (page: Page) => page.getByRole('alert');"
+			]
+		]
+	}
+};
+
+// ===================================================================================
+// 3. CALL STACK: a helper's arguments exist only while it runs. The top frame is running now.
+// ===================================================================================
+const FRAME = { kind: 'frame', label: 'arguments (only while it runs)', pubLabel: 'returns:' };
+const SCOPES = {
+	fOpen:       { ...FRAME, title: 'openLoginPage(page)', note: 'frame', vars: [['page', "this test's Page"]], returns: ['Promise<void>'] },
+	fLogin:      { ...FRAME, title: "login(page, 'alex', 'secret123')", note: 'frame',
+		vars: [['page', "this test's Page"], ['username', "'alex'"], ['password', "'secret123'"]], returns: ['Promise<void>'] },
+	fLoginWrong: { ...FRAME, title: "login(page, 'alex', 'wrong-password')", note: 'frame',
+		vars: [['page', "this test's Page"], ['username', "'alex'"], ['password', "'wrong-password'"]], returns: ['Promise<void>'] },
+	fHeading:    { ...FRAME, title: 'welcomeHeading(page) · taskCounter(page)', note: 'two short frames',
+		vars: [['page', "this test's Page"]], returns: ['Locator'] },
+	fAddTasks:   { ...FRAME, title: "addTasks(page, ['Buy milk', 'Walk the dog'])", note: 'frame 1 (outer)',
+		vars: [['page', "this test's Page"], ['titles', "['Buy milk', 'Walk the dog']"], ['title', 'loop variable']], returns: ['Promise<void>'] },
+	fAddTask:    { ...FRAME, title: 'addTask(page, title)', note: 'frame 2 (inner, running now)',
+		vars: [['page', 'the SAME Page, passed down'], ['title', "'Buy milk', then 'Walk the dog'"]], returns: ['Promise<void>'] },
+	fComplete:   { ...FRAME, title: "completeTask(page, 'Buy milk')", note: 'frame',
+		vars: [['page', "this test's Page"], ['title', "'Buy milk'"]], returns: ['Promise<void>'] },
+	fTaskItem:   { ...FRAME, title: "taskItem(page, 'Buy milk')", note: 'inner frame, running now',
+		vars: [['page', 'the SAME Page, passed down'], ['title', "'Buy milk'"], ['taskCheckbox', 'local Locator']], returns: ['Locator'] },
+};
+
+// ===================================================================================
+// 4. FLOWS
+//    Node states: idle | unused | running | used | busy | alive | finished | error | done
+//    A helper stays "running" while its code runs, then becomes "returned" (finished).
+// ===================================================================================
+const PHASES = {
+	start: ['start', '#94a3b8'], call: ['call', '#fb923c'], browser: ['browser', '#60a5fa'], ret: ['return', '#34d399'],
+	compare: ['compare', '#f87171'], done: ['done', '#22c55e'],
+};
+
+const ALL_UNUSED = { openLogin: 'unused', login: 'unused', addTasks: 'unused', completeTask: 'unused', addTask: 'unused', taskItem: 'unused', locators: 'unused' };
+
+const FLOWS = [
+	{ id: 'signin', name: 'Flow 1 · Sign in', hint: 'pass page into each function',
+		edges: ['spec>openLogin', 'openLogin>page', 'spec>login', 'login>page', 'spec>locators', 'locators>page'],
+		steps: [
+			{ phase: 'start', title: 'beforeEach receives the page, and creates nothing',
+				text: `Playwright gives <code>beforeEach</code> a fresh <code>page</code>. There is no <code>new</code> and no object to build: the helpers are plain functions, imported at the top of the file.`,
+				set: { ...ALL_UNUSED, spec: 'used', page: 'alive' }, edges: [], code: ['spec', [2, 3, 7]], mem: [] },
+			{ phase: 'call', title: 'openLoginPage(page)',
+				text: `The test passes <code>page</code> <b>as an argument</b>. Inside the function, <code>page</code> is just a parameter. For as long as the call runs, its arguments live in a <b>call frame</b> (see the "call stack" panel).`,
+				set: { openLogin: 'running' }, edges: [['spec>openLogin', 'call']], code: ['spec', [8]], mem: ['fOpen'], hl: ['fOpen.page'] },
+			{ phase: 'browser', title: 'The helper drives the browser',
+				text: `<code>page.goto(...)</code> opens the local sign-in page. The file URL is built inside the helper, so no test has to know it.`,
+				set: { openLogin: 'running', page: 'busy' }, status: { page: 'goto' }, edges: [['openLogin>page', 'browser']], code: ['auth', [6, 7]], mem: ['fOpen'], hl: ['fOpen.page'] },
+			{ phase: 'call', title: "login(page, 'alex', 'secret123')",
+				text: `<code>openLoginPage</code> has <b>returned</b> and its frame is gone: it remembers nothing. Now the test calls <code>login</code> and again passes <b>everything</b> it needs: the page and the test data.`,
+				set: { login: 'running' }, edges: [['spec>login', 'call']], code: ['spec', [12]], mem: ['fLogin'], hl: ['fLogin.page', 'fLogin.username', 'fLogin.password'] },
+			{ phase: 'browser', title: 'fill · fill · click',
+				text: `The helper uses its parameters: <code>page</code> to find the fields, <code>username</code> and <code>password</code> as values. No <code>this</code>, no hidden state: what you see in the call is all it uses.`,
+				set: { login: 'running', page: 'busy' }, status: { page: 'fill · fill · click' }, edges: [['login>page', 'browser']], code: ['auth', [11, 12, 13, 14]],
+				mem: ['fLogin'], hl: ['fLogin.page', 'fLogin.username', 'fLogin.password'] },
+			{ phase: 'browser', title: 'Locator helpers for the assertions',
+				text: `<code>welcomeHeading(page)</code> and <code>taskCounter(page)</code> are <b>synchronous</b>: they only <b>return a Locator</b>. The test passes that Locator to <code>expect</code>, so the assertion stays in the test.`,
+				set: { locators: 'running', page: 'busy' }, status: { page: 'expect' },
+				edges: [['spec>locators', 'call'], ['locators>page', 'browser']], code: ['spec', [14, 15]], mem: ['fHeading'], hl: ['fHeading.Locator'] },
+			{ phase: 'done', title: 'Passed: nothing to clean up',
+				text: `Every helper has returned and the call stack is empty. Nothing was created per test and nothing is kept between tests, so tests can't leak state into each other through helpers.`,
+				set: { spec: 'done', page: 'alive' }, edges: [], code: ['spec', [11, 12, 13, 14, 15, 16]], mem: [] },
+		] },
+
+	{ id: 'compose', name: 'Flow 2 · Helpers call helpers', hint: 'completes a task · composition',
+		edges: ['spec>login', 'login>page', 'spec>addTasks', 'addTasks>addTask', 'addTask>page', 'spec>completeTask', 'completeTask>taskItem', 'completeTask>page', 'spec>taskItem', 'taskItem>page', 'spec>locators', 'locators>page'],
+		steps: [
+			{ phase: 'start', title: 'beforeEach opened the page; the test signs in',
+				text: `Test: <b>"completes a task"</b>. Like the POM test, it builds its starting state <b>through the UI</b>: sign in, then add two tasks.`,
+				set: { ...ALL_UNUSED, openLogin: 'finished', spec: 'used', login: 'running', page: 'busy' }, status: { page: 'sign in' },
+				edges: [['spec>login', 'call'], ['login>page', 'browser']], code: ['specComplete', [33, 34]], mem: ['fLogin'] },
+			{ phase: 'call', title: "addTasks(page, ['Buy milk', 'Walk the dog'])",
+				text: `A <b>workflow helper</b>: one call for "add these tasks". It receives the page and an array of titles.`,
+				set: { addTasks: 'running' }, edges: [['spec>addTasks', 'call']], code: ['specComplete', [35]], mem: ['fAddTasks'], hl: ['fAddTasks.titles'] },
+			{ phase: 'browser', title: 'Composition: addTasks calls addTask in a loop',
+				text: `Small helpers build bigger ones. <code>addTasks</code> <b>passes its own <code>page</code> down</b> to <code>addTask</code>. Now there are two frames on the call stack: the inner one is running, the outer one waits for it.`,
+				set: { addTasks: 'running', addTask: 'running', page: 'busy' }, status: { page: 'add ×2' },
+				edges: [['addTasks>addTask', 'call'], ['addTask>page', 'browser']], code: ['tasks', [24, 25, 26, 18, 19, 20]],
+				mem: ['fAddTask', 'fAddTasks'], hl: ['fAddTask.page', 'fAddTask.title', 'fAddTasks.title'] },
+			{ phase: 'call', title: "completeTask(page, 'Buy milk')",
+				text: `Both <code>addTask</code> and <code>addTasks</code> have returned, so their frames are gone. Next helper.`,
+				set: { completeTask: 'running' }, edges: [['spec>completeTask', 'call']], code: ['specComplete', [37]], mem: ['fComplete'], hl: ['fComplete.title'] },
+			{ phase: 'ret', title: 'completeTask asks taskItem for a Locator',
+				text: `<code>taskItem(page, title)</code> finds the list item by its <b>exact</b> checkbox name and <b>returns a Locator</b> (the green dot travels back). Nothing has happened in the browser yet: locators are lazy.`,
+				set: { completeTask: 'running', taskItem: 'running' }, edges: [['completeTask>taskItem', 'call'], ['completeTask>taskItem', 'returns', true]],
+				code: ['tasks', [4, 5, 6, 31]], mem: ['fTaskItem', 'fComplete'], hl: ['fTaskItem.taskCheckbox', 'fTaskItem.Locator'] },
+			{ phase: 'browser', title: '.getByRole(\'checkbox\').check()',
+				text: `<code>completeTask</code> narrows the returned Locator to the checkbox and checks it. This is when the browser really acts.`,
+				set: { completeTask: 'running', page: 'busy' }, status: { page: 'check' }, edges: [['completeTask>page', 'browser']], code: ['tasks', [30, 31, 32]],
+				mem: ['fComplete'], hl: ['fComplete.page'] },
+			{ phase: 'browser', title: 'The same locator helpers are reused by the test',
+				text: `The test calls <code>taskItem</code> and <code>taskCounter</code> <b>itself</b> for the assertions. One helper, two users: other helpers and tests.`,
+				set: { taskItem: 'running', locators: 'running', page: 'busy' }, status: { page: 'expect' },
+				edges: [['spec>taskItem', 'call'], ['taskItem>page', 'browser'], ['spec>locators', 'call'], ['locators>page', 'browser']],
+				code: ['specComplete', [39, 40]], mem: ['fTaskItem'] },
+			{ phase: 'done', title: 'Passed',
+				text: `Composition is the strength of helpers: small functions combine like building blocks, and every function shows its inputs in its signature.`,
+				set: { spec: 'done', page: 'alive' }, edges: [], code: ['specComplete', [33, 34, 35, 36, 37, 38, 39, 40, 41]], mem: [] },
+		] },
+
+	{ id: 'tradeoffs', name: 'Flow 3 · Trade-offs', hint: 'wrong password · raw locator · vs POM',
+		edges: ['spec>login', 'login>page', 'spec>page'],
+		steps: [
+			{ phase: 'call', title: "login(page, 'alex', 'wrong-password')",
+				text: `Test: <b>"shows an error for a wrong password"</b>. The same <code>login</code> helper, with different data. Helpers don't assert, so they work for both the happy path and the error path.`,
+				set: { ...ALL_UNUSED, openLogin: 'finished', spec: 'used', login: 'running', page: 'busy' }, status: { page: 'fill · fill · click' },
+				edges: [['spec>login', 'call'], ['login>page', 'browser']], code: ['specWrong', [18, 19]], mem: ['fLoginWrong'], hl: ['fLoginWrong.password'] },
+			{ phase: 'browser', title: 'No helper for the error: a raw locator in the test',
+				text: `There is no <code>loginError(page)</code> helper, so the test writes <code>page.getByRole('alert')</code> itself. It works, but the selector now lives <b>in the test</b>. Nothing in the helpers pattern stops this; with POM, <code>errorMessage</code> is part of the class.`,
+				set: { page: 'busy' }, status: { page: 'expect' }, edges: [['spec>page', 'browser']], code: ['specWrong', [21]], mem: [] },
+			{ phase: 'compare', title: 'Helpers vs POM: page every time, or once',
+				text: `Helpers are <b>explicit</b>: every call shows its page and data. The cost is repetition: <code>page</code> appears in every call. POM passes <code>page</code> once, to the constructor, and you get <code>tasksPage.</code> autocomplete instead of a list of imports.`,
+				set: {}, edges: [], code: ['compare', [1, 2, 3, 4, 6, 7, 8, 9]], mem: [] },
+			{ phase: 'compare', title: 'No this, no surprises; but keep selectors in helpers',
+				text: `A helper doesn't use <code>this</code>, so copying or destructuring it is always safe (the POM pitfall can't happen). Fix the leak by adding a small locator helper, then every test uses the same selector.`,
+				set: {}, edges: [], code: ['compare', [11, 12, 13, 17, 18]], err: [15, 16], mem: [] },
+			{ phase: 'done', title: 'Passed',
+				text: `Functional helpers: <b>very low boilerplate</b>, easy to compose, no state to manage. Watch out for repeated <code>page</code> arguments, a flat list of imports, and raw selectors creeping into tests. Setup (sign in, data) is still done through the UI: <b>fixtures</b> solve that part.`,
+				set: { spec: 'done', page: 'alive' }, edges: [], code: ['specWrong', [18, 19, 20, 21, 22]], mem: [] },
+		] },
+];
+
+const STATUS = {
+	idle: '', unused: 'not used', running: 'running…', used: 'in use', busy: 'working', alive: 'in memory',
+	finished: 'returned ✓', error: 'error', done: '✓ passed',
+};
+
+
+// ===================================================================================
+// 5. RENDERING
+// ===================================================================================
+const $ = (id) => document.getElementById(id);
+const svgNS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => {
+	const node = document.createElementNS(svgNS, tag);
+	for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+	if (parent) parent.appendChild(node);
+	return node;
+};
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const nodeH = (n) => n.h ?? H;
+
+// Left-to-right curve. Tall nodes (spec, page) connect at the other node's height.
+function edgePath(fromId, toId) {
+	const a = NODES[fromId], b = NODES[toId];
+	const x1 = a.x + a.w / 2, x2 = b.x - b.w / 2 - 4;
+	const y1 = fromId === 'spec' ? b.y : a.y;
+	const y2 = toId === 'page' ? a.y : b.y;
+	const mx = (x1 + x2) / 2;
+	return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+}
+
+const EDGE_D = {};
+function drawGraph() {
+	for (const [from, to, kind, d] of EDGES) {
+		const id = `${from}>${to}`;
+		// An optional 4th value is a custom SVG path, for edges that don't run left to right.
+		EDGE_D[id] = d ?? edgePath(from, to);
+		el('path', { d: EDGE_D[id], class: `edge ${kind}`, id: `e-${id}`, 'marker-end': 'url(#arrow)' }, $('edges'));
+	}
+	for (const [id, n] of Object.entries(NODES)) {
+		const h = nodeH(n);
+		const g = el('g', { class: `node k-${n.kind} s-idle`, id: `n-${id}`, transform: `translate(${n.x},${n.y})` }, $('nodes'));
+		el('rect', { x: -n.w / 2, y: -h / 2, width: n.w, height: h, rx: 12 }, g);
+		if (n.badge) el('text', { class: 'badge', y: -h / 2 - 6 }, g).textContent = n.badge;
+		const ty = n.h ? -8 : -4;
+		el('text', { class: 'title', y: ty }, g).textContent = n.label;
+		el('text', { class: 'sub', y: ty + 17 }, g).textContent = n.sub;
+		el('text', { class: 'status', y: h / 2 + 15 }, g);
+	}
+}
+
+function highlight(line) {
+	const re = /(\/\/.*$)|('(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*")|\b(await|async|const|let|export|import|from|new|return|function|class|constructor|private|readonly|this|for|of|type|test|expect)\b/g;
+	let out = '', last = 0, m;
+	while ((m = re.exec(line))) {
+		out += escapeHtml(line.slice(last, m.index));
+		const cls = m[1] ? 'tok-c' : m[2] ? 'tok-s' : 'tok-k';
+		out += `<span class="${cls}">${escapeHtml(m[0])}</span>`;
+		last = re.lastIndex;
+	}
+	return out + escapeHtml(line.slice(last));
+}
+
+function renderCode([key, hl], err = []) {
+	const snip = CODE[key];
+	const rows = snip.numbered ?? snip.lines.map((t, i) => [snip.start + i, t]);
+	const parts = snip.file.split('/');
+	$('file').innerHTML = parts.length > 1
+		? `${escapeHtml(parts.slice(0, -1).join('/'))}/<b>${escapeHtml(parts.at(-1))}</b>` : `<b>${escapeHtml(snip.file)}</b>`;
+	$('code').innerHTML = rows.map(([n, t]) =>
+		`<span class="l${hl.includes(n) ? ' hl' : ''}${err.includes(n) ? ' err' : ''}"><span class="n">${n}</span>${highlight(t)}</span>`).join('');
+	// Scroll inside the code box only; scrollIntoView would also scroll the whole page.
+	const first = $('code').querySelector('.hl, .err');
+	if (first) $('code').scrollTop = Math.max(0, first.offsetTop - 40);
+}
+
+function renderMemory(mem, hl, prevMem) {
+	if (!mem.length) { $('memory').innerHTML = `<span class="empty">${MEMORY_EMPTY}</span>`; return; }
+	$('memory').innerHTML = mem.map((id) => {
+		const s = SCOPES[id];
+		const on = (name) => (hl.includes(`${id}.${name}`) ? ' hl' : '');
+		const vars = s.vars.map(([name, desc]) =>
+			`<span class="v${on(name)}">${name}</span><span class="d${on(name)}${s.override?.includes(name) ? ' ovr' : ''}">${escapeHtml(desc)}</span>`).join('');
+		const pub = s.returns
+			? `<div class="pub">${s.pubLabel ?? 'public (returned):'} ${s.returns.map((r) => `<span class="pill${on(r)}">${r}</span>`).join('')}</div>` : '';
+		const label = s.label ?? 'fields';
+		return `<div class="scope k-${s.kind}${prevMem.includes(id) ? ' kept' : ''}"><div class="scope-h">${escapeHtml(s.title)}<small>${s.note} · ${label}</small></div><div class="vars">${vars}</div>${pub}</div>`;
+	}).join('');
+}
+
+// ===================================================================================
+// 6. STATE MACHINE: replay steps 0..i so "back" and jumping always produce the right state
+// ===================================================================================
+let flow = FLOWS[0], index = 0, playing = false, timer = null, prevMem = [];
+const speed = () => Number($('speed').value);
+
+function stateAt(i) {
+	const nodes = Object.fromEntries(Object.keys(NODES).map((k) => [k, 'idle']));
+	let mem = [];
+	for (let s = 0; s <= i; s++) {
+		for (const k in nodes) {
+			if (nodes[k] === 'running') nodes[k] = FINISHING.includes(NODES[k].kind) ? 'finished' : 'alive';
+			if ((nodes[k] === 'used' || nodes[k] === 'busy') && k !== 'spec') nodes[k] = 'alive';
+		}
+		Object.assign(nodes, flow.steps[s].set);
+		if (flow.steps[s].mem) mem = flow.steps[s].mem;
+	}
+	return { nodes, mem };
+}
+
+let animToken = 0;
+function animateEdges(specs) {
+	const g = $('anims');
+	g.innerHTML = '';
+	const token = ++animToken;
+	const dur = 900 / speed();
+	specs.forEach(([edgeId, kind, reverse = false, temp = false], i) => {
+		const path = el('path', { d: temp ? TEMP[edgeId] : EDGE_D[edgeId], class: `anim ${kind}` }, g);
+		const len = path.getTotalLength();
+		path.style.strokeDasharray = `${len} ${len}`;
+		path.style.strokeDashoffset = len;
+		path.style.opacity = 0;
+		const dot = el('circle', { r: 6, class: `dot anim ${kind}`, fill: 'currentColor', opacity: 0 }, g);
+		const start = performance.now() + i * dur * 0.55;
+		const tick = (now) => {
+			if (token !== animToken) return;
+			const t = Math.min(1, Math.max(0, (now - start) / dur));
+			if (now >= start) {
+				const eased = 1 - Math.pow(1 - t, 3);
+				path.style.opacity = 1;
+				path.style.strokeDashoffset = len * (1 - eased);
+				const p = path.getPointAtLength(reverse ? len * (1 - eased) : len * eased);
+				dot.setAttribute('opacity', t < 1 ? 1 : 0);
+				dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+			}
+			if (t < 1) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+	return specs.length ? dur * (1 + 0.55 * (specs.length - 1)) : 0;
+}
+
+function render() {
+	const step = flow.steps[index];
+	const { nodes, mem } = stateAt(index);
+
+	for (const [id, state] of Object.entries(nodes)) {
+		const g = $(`n-${id}`);
+		g.setAttribute('class', `node k-${NODES[id].kind} s-${state}`);
+		g.querySelector('.status').textContent = step.status?.[id] ?? STATUS[state] ?? '';
+	}
+	for (const [from, to] of EDGES) {
+		const id = `${from}>${to}`;
+		$(`e-${id}`).classList.toggle('in-flow', flow.edges.includes(id));
+	}
+
+	const [phaseName, phaseColor] = PHASES[step.phase];
+	$('now').innerHTML = `<h2>What happens now</h2><span class="phase" style="background:${phaseColor}">${phaseName}</span>
+		<div class="text"><h3>${index + 1}. ${step.title}</h3><p>${step.text}</p></div>`;
+	renderCode(step.code, step.err);
+	renderMemory(mem, step.hl ?? [], prevMem);
+	prevMem = mem;
+
+	$('counter').textContent = `${index + 1} / ${flow.steps.length}`;
+	[...$('progress').children].forEach((d, i) => d.className = i < index ? 'past' : i === index ? 'current' : '');
+	[...$('timeline').children].forEach((li, i) => li.className = i < index ? 'past' : i === index ? 'current' : '');
+	const li = $('timeline').children[index];
+	$('timeline').scrollTop = Math.max(0, li.offsetTop - $('timeline').clientHeight / 2);
+
+	return animateEdges(step.edges);
+}
+
+function buildFlowUi() {
+	$('progress').innerHTML = flow.steps.map((s) => `<div style="background:${PHASES[s.phase][1]}" title="${PHASES[s.phase][0]}"></div>`).join('');
+	[...$('progress').children].forEach((d, i) => d.onclick = () => go(i));
+	$('timeline').innerHTML = flow.steps.map((s, i) =>
+		`<li><span class="num">${i + 1}</span><span class="pd" style="background:${PHASES[s.phase][1]}"></span><span>${escapeHtml(s.title)}</span></li>`).join('');
+	[...$('timeline').children].forEach((li, i) => li.onclick = () => go(i));
+	document.querySelectorAll('.flow-btn').forEach((b) => b.classList.toggle('active', b.dataset.id === flow.id));
+}
+
+function selectFlow(i) { stop(); flow = FLOWS[i]; index = 0; prevMem = []; buildFlowUi(); render(); }
+function go(i) { stop(); index = Math.max(0, Math.min(flow.steps.length - 1, i)); render(); }
+
+function schedule(animTime) {
+	clearTimeout(timer);
+	if (!playing) return;
+	timer = setTimeout(() => {
+		if (index >= flow.steps.length - 1) return stop();
+		index++;
+		schedule(render());
+	}, Math.max(animTime + 900 / speed(), 2800 / speed()));
+}
+function play() {
+	if (index >= flow.steps.length - 1) { index = 0; prevMem = []; }
+	playing = true; $('play').textContent = '⏸ Pause';
+	schedule(render());
+}
+function stop() { playing = false; clearTimeout(timer); $('play').textContent = '▶ Play'; }
+
+// ===================================================================================
+// 7. WIRING
+// ===================================================================================
+$('flows').innerHTML = FLOWS.map((f, i) => `<button class="flow-btn" data-id="${f.id}" data-i="${i}">${f.name}<small>${f.hint}</small></button>`).join('');
+document.querySelectorAll('.flow-btn').forEach((b) => b.onclick = () => selectFlow(Number(b.dataset.i)));
+$('play').onclick = () => (playing ? stop() : play());
+$('next').onclick = () => go(index + 1);
+$('prev').onclick = () => go(index - 1);
+$('reset').onclick = () => { prevMem = []; go(0); };
+document.addEventListener('keydown', (e) => {
+	if (e.target.tagName === 'SELECT') return;
+	// Let Space/Enter toggle the focused intro panel instead of starting the animation.
+	if (e.target.tagName === 'SUMMARY' && (e.key === ' ' || e.key === 'Enter')) return;
+	if (e.key === 'i' || e.key === 'I') { $('intro').open = !$('intro').open; return; }
+	if (e.key === 'ArrowRight') go(index + 1);
+	else if (e.key === 'ArrowLeft') go(index - 1);
+	else if (e.key === 'Home') { prevMem = []; go(0); }
+	else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
+	else if (['1', '2', '3'].includes(e.key)) selectFlow(Number(e.key) - 1);
+});
+
+drawGraph();
+selectFlow(0);
+</script>
+</body>
+</html>

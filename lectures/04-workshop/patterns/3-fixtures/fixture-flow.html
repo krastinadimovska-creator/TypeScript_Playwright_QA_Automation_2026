@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture Flow: how Playwright runs fixtures, POM and tests</title>
+<!--
+	Interactive teaching aid for Lecture 4 (folder 3-fixtures and 5-combined).
+	Open this file directly in a browser; it needs no server and no internet.
+	The step order mirrors what Playwright 1.64 reports for these tests
+	(captured from a reporter's onStepBegin/onStepEnd events).
+-->
+<style>
+	:root {
+		--bg: #0f172a; --panel: #111c33; --panel-2: #16233f; --line: #3b5683; --text: #f8fafc; --muted: #cbd5e1; --dim: #a5b4cf;
+		--builtin: #64748b; --worker: #a78bfa; --option: #fbbf24; --auto: #f87171; --fixture: #34d399;
+		--demo5: #2dd4bf; --pom: #f472b6; --test: #60a5fa;
+		--provide: #7dd3fc; --call: #fb923c; --resolve: #94a3b8; --creates: #f472b6;
+		--ph-plan: #94a3b8; --ph-worker: #a78bfa; --ph-setup: #34d399; --ph-body: #60a5fa; --ph-teardown: #f87171; --ph-done: #22c55e;
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+	header { padding: 18px 24px 8px; }
+	h1 { margin: 0 0 4px; font-size: 26px; }
+	h1 small { color: var(--muted); font-weight: 400; font-size: 16px; }
+	.rules { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+	.rules li { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-size: 15px; color: var(--muted); }
+	.rules b { color: var(--text); }
+	code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; color: #fde68a; background: #0b1224; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 24px; position: sticky; top: 0; z-index: 5; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+	.flows { display: flex; gap: 6px; flex-wrap: wrap; }
+	.flow-btn { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 7px 14px; font-size: 15px; cursor: pointer; text-align: left; }
+	.flow-btn small { display: block; color: var(--muted); font-size: 13px; }
+	.flow-btn.active { border-color: var(--test); box-shadow: 0 0 0 1px var(--test) inset; background: var(--panel-2); }
+	.controls { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+	.controls button, .controls select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; height: 38px; min-width: 42px; cursor: pointer; font-size: 16px; }
+	.controls button.primary { background: #1d4ed8; border-color: #1d4ed8; min-width: 100px; font-size: 16px; }
+	.counter { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+
+	.progress { display: flex; gap: 3px; padding: 8px 24px 0; }
+	.progress div { flex: 1; height: 8px; border-radius: 4px; opacity: 0.4; cursor: pointer; transition: opacity 0.2s, transform 0.2s; }
+	.progress div.past { opacity: 0.65; }
+	.progress div.current { opacity: 1; transform: scaleY(1.6); }
+
+	main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(420px, 1fr); gap: 16px; padding: 14px 24px 24px; align-items: start; }
+	.graph-card { position: sticky; top: 70px; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+	.card h2 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+	.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+	/* ---------- Graph ---------- */
+	svg { width: 100%; height: auto; display: block; }
+	.edge { fill: none; stroke: var(--line); stroke-width: 2; transition: stroke 0.3s, opacity 0.3s; opacity: 0.4; }
+	.edge.in-flow { opacity: 1; stroke: #6b86b8; stroke-width: 2.5; }
+	.edge.auto { stroke-dasharray: 6 5; }
+	.edge.creates { stroke-dasharray: 2 5; }
+	.anim { fill: none; stroke-width: 4; stroke-linecap: round; filter: drop-shadow(0 0 6px currentColor); }
+	.anim.provide { stroke: var(--provide); color: var(--provide); }
+	.anim.call { stroke: var(--call); color: var(--call); }
+	.anim.resolve { stroke: var(--resolve); color: var(--resolve); stroke-width: 3; }
+	.anim.creates { stroke: var(--creates); color: var(--creates); }
+	.anim.auto { stroke: var(--auto); color: var(--auto); }
+	.dot { filter: drop-shadow(0 0 8px currentColor); }
+
+	.node rect { fill: #0b1224; stroke: var(--k); stroke-width: 2; transition: fill 0.3s, opacity 0.3s, stroke-width 0.3s; }
+	.node { --k: var(--builtin); transition: opacity 0.35s; cursor: default; }
+	.node .title { fill: var(--text); font: 700 16px ui-monospace, Menlo, monospace; text-anchor: middle; }
+	.node .sub { fill: var(--muted); font-size: 13px; text-anchor: middle; }
+	.node .status { font-size: 13.5px; font-weight: 700; text-anchor: middle; fill: var(--muted); }
+	.node .badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-anchor: middle; fill: var(--k); }
+	.node .auto-mark-bg { fill: var(--auto); stroke: var(--auto); }
+	.node .badge.auto-mark { fill: #0b1224; font-size: 10px; }
+	.k-builtin { --k: var(--builtin); } .k-worker { --k: var(--worker); } .k-option { --k: var(--option); }
+	.k-auto { --k: var(--auto); } .k-fixture { --k: var(--fixture); } .k-demo5 { --k: var(--demo5); }
+	.k-pom { --k: var(--pom); } .k-test { --k: var(--test); }
+
+	.s-idle { opacity: 0.55; }
+	.s-unused { opacity: 0.28; }
+	.s-planned { opacity: 0.9; }
+	.s-planned rect { stroke-dasharray: 5 4; }
+	.s-setup rect, .s-body rect { fill: color-mix(in srgb, var(--k) 30%, #0b1224); stroke-width: 3; animation: pulse 1s ease-in-out infinite; }
+	.s-alive rect, .s-reused rect { fill: color-mix(in srgb, var(--k) 16%, #0b1224); }
+	.s-alive .status, .s-reused .status { fill: var(--k); }
+	.s-setup .status { fill: var(--k); }
+	.s-body .status { fill: var(--test); }
+	.s-teardown rect { stroke: var(--auto); fill: color-mix(in srgb, var(--auto) 25%, #0b1224); stroke-width: 3; animation: pulse-red 0.9s ease-in-out infinite; }
+	.s-teardown .status { fill: var(--auto); }
+	.s-closed { opacity: 0.5; }
+	.s-closed rect { stroke-dasharray: 2 4; }
+	.s-done rect { stroke: var(--ph-done); fill: color-mix(in srgb, var(--ph-done) 18%, #0b1224); }
+	.s-done .status { fill: var(--ph-done); }
+	@keyframes pulse { 0%, 100% { filter: drop-shadow(0 0 2px var(--k)); } 50% { filter: drop-shadow(0 0 14px var(--k)); } }
+	@keyframes pulse-red { 0%, 100% { filter: drop-shadow(0 0 2px var(--auto)); } 50% { filter: drop-shadow(0 0 14px var(--auto)); } }
+
+	.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 15px; color: var(--muted); }
+	.legend span { display: inline-flex; align-items: center; gap: 6px; }
+	.sw { width: 12px; height: 12px; border-radius: 3px; border: 2px solid; display: inline-block; }
+	.legend .auto-mark { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 7px; color: #0b1224; background: var(--auto); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+	.ln { width: 22px; height: 0; border-top: 3px solid; display: inline-block; }
+
+	/* ---------- Narration ---------- */
+	.phase { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 10px; border-radius: 999px; color: #0b1224; }
+	.now h3 { margin: 10px 0 8px; font-size: 20px; }
+	.now p { margin: 0; color: var(--text); font-size: 17px; line-height: 1.6; }
+	.now .text { animation: fade 0.35s ease; }
+	@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Code ---------- */
+	.file { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 6px; }
+	.file b { color: var(--text); }
+	pre.code { position: relative; max-height: 360px; overflow-y: auto; margin: 0; background: #070d1c; border: 1px solid var(--line); border-radius: 10px; padding: 8px 0; overflow-x: auto; font: 14.5px/1.65 ui-monospace, Menlo, monospace; color: #f1f5f9; }
+	.code .l { display: block; padding: 0 12px 0 0; white-space: pre; border-left: 3px solid transparent; transition: background 0.3s; }
+	.code .l .n { display: inline-block; width: 42px; text-align: right; padding-right: 12px; color: var(--dim); user-select: none; }
+	.code .l.hl { background: rgba(96, 165, 250, 0.28); border-left-color: var(--test); }
+	.code .l.hl .n { color: var(--text); font-weight: 700; }
+	.code .l.gap { color: var(--dim); }
+	.tok-k { color: #d8b4fe; } .tok-s { color: #86efac; } .tok-c { color: #a5b4cf; font-style: italic; }
+
+	/* ---------- Stack ---------- */
+	.stack-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+	.stack-wrap h4 { margin: 0 0 8px; font-size: 15px; color: var(--text); font-weight: 600; }
+	.stack-wrap h4 code { white-space: nowrap; }
+	.stack-wrap h4 small { color: var(--muted); font-weight: 400; font-size: 13px; }
+	.stack { display: flex; flex-direction: column-reverse; gap: 5px; min-height: 40px; }
+	.worker-list { display: flex; flex-direction: column; gap: 5px; }
+	.chip { font: 14.5px ui-monospace, Menlo, monospace; color: var(--text); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--k); background: color-mix(in srgb, var(--k) 14%, #0b1224); animation: slide-in 0.4s ease; }
+	.chip small { display: block; font-family: system-ui, sans-serif; color: var(--muted); font-size: 12.5px; }
+	.chip.leaving { animation: slide-out 0.6s ease forwards; border-color: var(--auto); }
+	.empty { color: var(--dim); font-size: 14px; font-style: italic; }
+	@keyframes slide-in { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+	@keyframes slide-out { 0% { opacity: 1; } 100% { opacity: 0; transform: translateX(30px); } }
+
+	/* ---------- Timeline ---------- */
+	ol.timeline { position: relative; margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+	ol.timeline li { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--dim); font-size: 15px; }
+	ol.timeline li:hover { background: var(--panel-2); }
+	ol.timeline li.current { background: #1e3a8a; color: #fff; font-weight: 700; }
+	ol.timeline li.past { color: var(--text); }
+	ol.timeline .pd { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: translateY(1px); }
+	ol.timeline .num { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 18px; }
+
+	/* ---------- Intro panel: "What is a fixture?" ---------- */
+	.intro { margin: 12px 24px 4px; background: var(--panel); border: 1px solid var(--fixture); border-radius: 14px; }
+	.intro summary { list-style: none; cursor: pointer; padding: 12px 16px; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+	.intro summary::-webkit-details-marker { display: none; }
+	.intro summary::before { content: '▶'; color: var(--fixture); font-size: 14px; transition: transform 0.2s; }
+	.intro[open] summary::before { transform: rotate(90deg); }
+	.intro summary small { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: auto; }
+	.intro summary:focus-visible { outline: 2px solid var(--fixture); border-radius: 14px; }
+	.intro-body { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; animation: fade 0.3s ease; }
+	@media (max-width: 900px) { .intro-body { grid-template-columns: 1fr; } }
+	.intro-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+	.intro-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--fixture); }
+	.intro-card p { margin: 0 0 8px; font-size: 16px; }
+	.intro-card ul { margin: 0; padding-left: 20px; font-size: 16px; }
+	.intro-card li { margin: 3px 0; }
+	.intro-card pre { margin: 6px 0 0; background: #070d1c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 14.5px/1.6 ui-monospace, Menlo, monospace; color: #f1f5f9; overflow-x: auto; }
+	.intro-card pre .c { color: #a5b4cf; font-style: italic; }
+	.intro-card pre .k { color: #d8b4fe; }
+	.intro-card pre .s { color: #86efac; }
+	.intro-card pre .u { color: #fde68a; font-weight: 700; }
+	.intro-card.wide { grid-column: 1 / -1; }
+	.intro table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+	.intro th, .intro td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	.intro th { color: var(--muted); font-weight: 600; }
+	.intro .no h3 { color: var(--option); }
+
+	footer { padding: 0 24px 28px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+	footer a { color: var(--test); }
+	footer nav { margin-top: 6px; }
+	footer nav a.here { color: var(--text); font-weight: 700; text-decoration: none; }
+	@media (max-width: 1100px) { main { grid-template-columns: 1fr; } .graph-card { position: static; } }
+</style>
+</head>
+<body>
+<header>
+	<h1>Fixture Flow <small>who calls whom, and when: fixtures, POM and the test body</small></h1>
+	<ul class="rules">
+		<li><b>1.</b> Playwright builds only what the test asks for, plus their dependencies and <b>auto</b> fixtures</li>
+		<li><b>2.</b> Setup runs until <code>await use(...)</code>, then the fixture <b>pauses</b></li>
+		<li><b>3.</b> After the test, fixtures resume in <b>reverse</b> order (teardown)</li>
+		<li><b>4.</b> <b>Worker</b> fixtures survive across tests; test fixtures do not</li>
+	</ul>
+</header>
+
+<!-- Collapsible theory panel. Closed by default so the animation stays on screen; toggle with a click or the "I" key. -->
+<details class="intro" id="intro">
+	<summary>What is a fixture? The basics in 2 minutes <small>click or press <code>I</code> to show / hide</small></summary>
+	<div class="intro-body">
+
+		<div class="intro-card">
+			<h3>1. The idea in one sentence</h3>
+			<p>A <b>fixture</b> is something a test needs, which Playwright <b>prepares before</b> the test and <b>cleans up after</b> it.</p>
+			<p>The test only <b>asks for it by name</b> in its arguments. It never builds it itself.</p>
+			<p>Analogy: in a restaurant the table is set before you sit down and cleared after you leave. You just say "a table for two, please".</p>
+		</div>
+
+		<div class="intro-card">
+			<h3>2. You already use fixtures</h3>
+			<p>Every <code>{ page }</code> you have written is a built-in fixture:</p>
+<pre><span class="k">test</span>(<span class="s">'opens home'</span>, <span class="k">async</span> ({ <span class="u">page</span> }) => {
+  <span class="k">await</span> page.goto(<span class="s">'/'</span>);
+});</pre>
+			<p style="margin-top:8px">Built-in ones: <code>page</code>, <code>context</code>, <code>browser</code>, <code>request</code>, <code>browserName</code>. You get a new, clean <code>page</code> for every test, and it is closed for you afterwards.</p>
+		</div>
+
+		<div class="intro-card">
+			<h3>3. How a fixture works: setup, use, teardown</h3>
+<pre><span class="k">export const</span> test = base.extend&lt;{ todoPage: Page }&gt;({
+  todoPage: <span class="k">async</span> ({ page }, <span class="u">use</span>) => {
+    <span class="c">// 1. SETUP: runs before the test</span>
+    <span class="k">await</span> page.goto(<span class="s">'/todos'</span>);
+
+    <span class="k">await</span> <span class="u">use</span>(page);   <span class="c">// 2. the TEST runs here</span>
+
+    <span class="c">// 3. TEARDOWN: runs after the test,</span>
+    <span class="c">//    even if the test failed</span>
+  },
+});</pre>
+			<p style="margin-top:8px"><code>await use(value)</code> is the line between "before" and "after". The value you pass is what the test receives.</p>
+		</div>
+
+		<div class="intro-card">
+			<h3>4. When is a fixture called?</h3>
+			<ul>
+				<li><b>Only when needed:</b> the test lists it, or another fixture it uses needs it. Unused fixtures are never run.</li>
+				<li><b>Once per test:</b> if two fixtures both ask for <code>page</code>, they get the <b>same</b> page.</li>
+				<li><b>Dependencies first:</b> <code>page</code> is ready before the fixtures that need it.</li>
+				<li><b>Teardown in reverse order</b>, and <b>always</b>, also after a failure.</li>
+				<li><b>Auto</b> fixtures run for every test, even if no test asks for them.</li>
+				<li><b>Worker</b> fixtures run once per worker process and are shared by its tests (for slow, expensive setup).</li>
+			</ul>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>5. Where fixtures are used in real projects</h3>
+			<table>
+				<tr><th>Need</th><th>Fixture example</th><th>Setup → teardown</th></tr>
+				<tr><td>Logged-in user</td><td><code>adminPage</code>, <code>userPage</code></td><td>log in through the API or load a saved <code>storageState</code> → nothing, or log out</td></tr>
+				<tr><td>Test data</td><td><code>project</code>, <code>customer</code></td><td>create it with an API call → delete it with an API call</td></tr>
+				<tr><td>Ready page objects</td><td><code>loginPage</code>, <code>cartPage</code></td><td><code>new LoginPage(page)</code> → nothing</td></tr>
+				<tr><td>API client</td><td><code>api</code> (with auth token)</td><td>create a request context with headers → <code>dispose()</code></td></tr>
+				<tr><td>Fake backend responses</td><td><code>mockPayments</code></td><td><code>page.route(...)</code> → routes are removed with the page</td></tr>
+				<tr><td>Settings per suite</td><td><code>locale</code>, <code>seed</code> (option fixtures)</td><td>a default value, changed with <code>test.use({ ... })</code></td></tr>
+				<tr><td>Safety checks</td><td><code>failOnPageErrors</code> (auto)</td><td>start listening → fail if the page threw an error</td></tr>
+				<tr><td>Expensive shared resources</td><td><code>dbConnection</code> (worker)</td><td>connect once per worker → disconnect at the end</td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card">
+			<h3>6. Why not just <code>beforeEach</code>?</h3>
+			<ul>
+				<li><b>Setup and cleanup sit together</b> in one function, so you can't forget the cleanup.</li>
+				<li><b>On demand:</b> a test pays only for what it asks for.</li>
+				<li><b>Reusable</b> across many spec files; just import <code>test</code>.</li>
+				<li><b>Typed:</b> autocomplete shows what is available.</li>
+				<li><b>Isolated:</b> every test gets its own copy, so tests can run in parallel.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card no">
+			<h3>7. When NOT to use a fixture</h3>
+			<ul>
+				<li>For <b>a UI step</b> the test performs, like "add a task" or "fill the form": use a helper function or a page object.</li>
+				<li>For <b>the checks the test is about</b>: keep those <code>expect</code>s in the test, where readers look for them.</li>
+				<li>For <b>a value used by one test only</b>: a local variable is simpler.</li>
+			</ul>
+			<p style="margin-top:8px">Rule of thumb: <b>fixtures prepare and clean up; the test acts and checks.</b></p>
+		</div>
+
+	</div>
+</details>
+
+<div class="toolbar">
+	<div class="flows" id="flows"></div>
+	<div class="controls">
+		<button id="reset" title="Restart (Home)">⏮</button>
+		<button id="prev" title="Previous step (←)">◀</button>
+		<button id="play" class="primary" title="Play / pause (Space)">▶ Play</button>
+		<button id="next" title="Next step (→)">▶|</button>
+		<span class="counter" id="counter"></span>
+		<select id="speed" title="Speed">
+			<option value="0.6">0.6×</option>
+			<option value="1" selected>1×</option>
+			<option value="1.6">1.6×</option>
+		</select>
+	</div>
+</div>
+<div class="progress" id="progress"></div>
+
+<main>
+	<section class="card graph-card">
+		<h2>Dependency graph <span style="text-transform:none;letter-spacing:0">(arrow = value flows toward the test)</span></h2>
+		<svg id="graph" viewBox="0 70 1000 625" role="img" aria-label="Fixture dependency graph">
+			<defs>
+				<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b5683"/></marker>
+				<marker id="arrow-call" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fb923c"/></marker>
+			</defs>
+			<g id="edges"></g>
+			<g id="anims"></g>
+			<g id="nodes"></g>
+		</svg>
+		<div class="legend">
+			<span><i class="sw" style="border-color:var(--builtin)"></i>Playwright built-in</span>
+			<span><i class="sw" style="border-color:var(--worker)"></i>worker fixture</span>
+			<span><i class="sw" style="border-color:var(--option)"></i>option fixture</span>
+			<span><i class="auto-mark">AUTO</i>runs automatically for every test</span>
+			<span><i class="sw" style="border-color:var(--fixture)"></i>our fixture (folder 3)</span>
+			<span><i class="sw" style="border-color:var(--demo5)"></i>fixture (folder 5)</span>
+			<span><i class="sw" style="border-color:var(--pom)"></i>page object class</span>
+			<span><i class="sw" style="border-color:var(--test)"></i>test body</span>
+			<span><i class="ln" style="border-color:var(--resolve);border-top-style:dashed"></i>Playwright resolves</span>
+			<span><i class="ln" style="border-color:var(--provide)"></i>fixture provides value</span>
+			<span><i class="ln" style="border-color:var(--call)"></i>code calls / uses</span>
+		</div>
+	</section>
+
+	<div class="side">
+		<section class="card now" id="now"></section>
+		<section class="card">
+			<h2>Code running now</h2>
+			<div class="file" id="file"></div>
+			<pre class="code" id="code"></pre>
+		</section>
+		<section class="card">
+			<h2>Lifecycle</h2>
+			<div class="stack-wrap">
+				<div>
+					<h4>Test fixtures paused at <code>await use()</code><br><small>top = newest, torn down first</small></h4>
+					<div class="stack" id="stack"></div>
+				</div>
+				<div>
+					<h4>Worker fixtures<br><small>live for the whole worker process</small></h4>
+					<div class="worker-list" id="workers"></div>
+				</div>
+			</div>
+		</section>
+		<section class="card">
+			<h2>All steps</h2>
+			<ol class="timeline" id="timeline"></ol>
+		</section>
+	</div>
+</main>
+
+<footer>
+	Files: <code>3-fixtures/fixtures/*.fixture.ts</code>, <code>3-fixtures/tests/tasks.spec.ts</code>,
+	<code>5-combined/fixtures/combined.fixture.ts</code>, <code>1-page-object-model/page-objects/LoginPage.ts</code>.
+	The order of steps matches what Playwright reports when it runs these tests. Built-in fixtures are shown simplified.
+	Keyboard: <code>←</code> <code>→</code> step, <code>Space</code> play/pause, <code>1</code> <code>2</code> <code>3</code> pick a flow, <code>I</code> show/hide "What is a fixture?".
+	<nav>All walkthroughs: <a href="../1-page-object-model/pom-flow.html">Page Object Model</a> · <a href="../2-functional-helpers/helpers-flow.html">Functional helpers</a> · <a href="../3-fixtures/fixture-flow.html" class="here">Fixtures</a> · <a href="../4-factory-functions/factory-flow.html">Factory functions</a> · <a href="../5-combined/combined-flow.html">Combined</a></nav>
+</footer>
+
+<script>
+// ===================================================================================
+// 1. GRAPH: nodes (fixtures, POM, test) and edges (dependencies)
+// ===================================================================================
+const NODES = {
+	browser:      { x: 90,  y: 360, w: 130, kind: 'builtin', sub: 'built-in', badge: 'WORKER' },
+	context:      { x: 230, y: 360, w: 120, kind: 'builtin', sub: 'built-in' },
+	page:         { x: 370, y: 360, w: 120, kind: 'builtin', sub: 'built-in' },
+	appUrls:      { x: 370, y: 158, w: 140, kind: 'worker',  sub: 'app.fixture.ts', badge: 'WORKER' },
+	seed:         { x: 370, y: 272, w: 140, kind: 'option',  sub: 'data.fixture.ts', badge: 'OPTION' },
+	errors:       { x: 580, y: 140, w: 185, kind: 'auto',    sub: 'errors.fixture.ts', label: 'failOnPageErrors', badge: 'AUTO · EVERY TEST' },
+	guestPage:    { x: 580, y: 250, w: 160, kind: 'fixture', sub: 'auth.fixture.ts' },
+	signedInPage: { x: 580, y: 360, w: 160, kind: 'fixture', sub: 'auth.fixture.ts' },
+	tasks:        { x: 790, y: 440, w: 160, kind: 'demo5',   sub: 'combined.fixture.ts' },
+	loginPage:    { x: 580, y: 490, w: 175, kind: 'demo5',   sub: 'combined.fixture.ts' },
+	LoginPage:    { x: 790, y: 600, w: 175, kind: 'pom',     sub: '1-page-object-model', label: 'LoginPage class', badge: 'POM' },
+	test:         { x: 940, y: 360, w: 110, h: 440, kind: 'test', sub: 'spec file', label: 'TEST' },
+};
+const H = 60;
+const TEST_TOP = 140, TEST_BOTTOM = 580;
+
+// "a>b" means: a's value is passed into b. Optional custom path `d` for routes around other nodes.
+const EDGES = [
+	['browser', 'context'], ['context', 'page'],
+	['page', 'errors'], ['page', 'guestPage'], ['page', 'signedInPage'], ['page', 'loginPage'],
+	['appUrls', 'guestPage'], ['appUrls', 'signedInPage'], ['seed', 'signedInPage'],
+	['signedInPage', 'tasks'], ['LoginPage', 'loginPage', 'creates'],
+	['errors', 'test', 'auto'], ['guestPage', 'test'], ['signedInPage', 'test'], ['tasks', 'test'], ['loginPage', 'test'],
+	['page', 'test', 'provide', 'M428,382 C450,690 900,690 940,582'],
+];
+
+// Temporary paths for calls that are not dependencies (POM method calls reaching the page).
+const TEMP = {
+	testToPom: 'M884,556 C840,556 900,602 873,602',
+	pomToPage: 'M710,612 C540,668 440,600 426,386',
+};
+
+// ===================================================================================
+// 2. CODE SNIPPETS (real line numbers from the workshop files)
+// ===================================================================================
+const CODE = {
+	builtin: { file: 'Playwright built-ins (simplified sketch, you never write this)', start: 1, lines: [
+		"browser: [async ({ playwright, browserName }, use) => {",
+		"  const browser = await playwright[browserName].launch();",
+		"  await use(browser);",
+		"  await browser.close();",
+		"}, { scope: 'worker' }],",
+		"context: async ({ browser }, use) => {",
+		"  const context = await browser.newContext(); // fresh cookies + storage",
+		"  await use(context);",
+		"  await context.close();",
+		"},",
+		"page: async ({ context }, use) => {",
+		"  await use(await context.newPage());          // closed with its context",
+		"},",
+	]},
+	app: { file: '3-fixtures/fixtures/app.fixture.ts', start: 26, lines: [
+		"export const test = base.extend<{}, { appUrls: AppUrls }>({",
+		"  appUrls: [async ({}, use) => {",
+		"    // Playwright requires the first argument to be destructured, even when it is empty.",
+		"    await use({ login: pageUrl('login.html'), tasks: pageUrl('tasks.html') });",
+		"  }, { scope: 'worker' }],",
+		"});",
+	]},
+	data: { file: '3-fixtures/fixtures/data.fixture.ts', start: 17, lines: [
+		"export const test = base.extend<{ seed: Seed }>({",
+		"  // [default value, options]. `option: true` lets test.use() and the config override it.",
+		"  // The value is an object, not a bare array: test.use treats an array as [value, options].",
+		"  // See \"Array as an option value\": https://playwright.dev/docs/test-fixtures#fixtures-options",
+		"  seed: [{ tasks: [] }, { option: true }],",
+		"});",
+	]},
+	errors: { file: '3-fixtures/fixtures/errors.fixture.ts', start: 18, lines: [
+		"export const test = base.extend<{ failOnPageErrors: void }>({",
+		"  failOnPageErrors: [async ({ page }, use) => {",
+		"    // Setup: listen before anything navigates, so errors during page load are caught too.",
+		"    const errors: string[] = [];",
+		"    page.on('pageerror', (error) => errors.push(error.message));",
+		"",
+		"    await use();",
+		"",
+		"    // Teardown: runs after the test, even if it failed.",
+		"    expect(errors, 'JavaScript errors thrown by the page').toEqual([]);",
+		"  }, { auto: true, title: 'check for page errors' }],",
+		"});",
+	]},
+	auth: { file: '3-fixtures/fixtures/auth.fixture.ts', start: 24, lines: [
+		"export const test = mergeTests(appTest, dataTest).extend<AuthFixtures>({",
+		"  guestPage: async ({ page, appUrls }, use) => {",
+		"    await page.goto(appUrls.login);",
+		"    await use(page);",
+		"  },",
+		"",
+		"  signedInPage: async ({ page, appUrls, seed }, use) => {",
+		"    // Seed the session directly, like calling a login API in a real project.",
+		"    // Not context.addInitScript (the docs' session storage recipe): it runs on every",
+		"    // navigation and would sign the user in again after \"Sign out\".",
+		"    await page.goto(appUrls.login);",
+		"    await page.evaluate((tasks) => {",
+		"      sessionStorage.setItem('taskboard-user', 'Alex');",
+		"      sessionStorage.setItem('taskboard-tasks', JSON.stringify(tasks));",
+		"    }, seed.tasks);",
+		"    await page.goto(appUrls.tasks);",
+		"    // Fail during setup, not in the test, if signing in did not work.",
+		"    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Hi, Alex!');",
+		"",
+		"    await use(page);",
+		"    // No teardown needed: Playwright closes the test's page and context, and its storage.",
+		"  },",
+		"});",
+	]},
+	specGuest: { file: '3-fixtures/tests/tasks.spec.ts', start: 9, lines: [
+		"test('signs in with valid credentials', async ({ guestPage }) => {",
+		"  await guestPage.getByLabel('Username').fill('alex');",
+		"  await guestPage.getByLabel('Password').fill('secret123');",
+		"  await guestPage.getByRole('button', { name: 'Sign in' }).click();",
+		"",
+		"  await expect(guestPage.getByRole('heading', { level: 1 })).toHaveText('Hi, Alex!');",
+		"  await expect(guestPage.getByRole('status')).toHaveText('No tasks yet.');",
+		"});",
+	]},
+	specDelete: { file: '3-fixtures/tests/tasks.spec.ts', numbered: [
+		[38, "test.use({"],
+		[39, "  seed: {"],
+		[40, "    tasks: ["],
+		[41, "      { title: 'Buy milk', done: false },"],
+		[42, "      { title: 'Buy milk and eggs', done: false },"],
+		[43, "    ],"],
+		[44, "  },"],
+		[45, "});"],
+		[null, "…"],
+		[59, "test('deletes a task', async ({ signedInPage }) => {"],
+		[60, "  const buyMilk = signedInPage.getByRole('listitem').filter({"],
+		[61, "    has: signedInPage.getByRole('checkbox', { name: 'Buy milk', exact: true }),"],
+		[62, "  });"],
+		[63, "  await buyMilk.getByRole('button', { name: 'Delete Buy milk', exact: true }).click();"],
+		[64, ""],
+		[65, "  await expect(buyMilk).toHaveCount(0);"],
+		[66, "  await expect(signedInPage.getByRole('checkbox', { name: 'Buy milk and eggs', exact: true })).toBeVisible();"],
+		[67, "});"],
+	]},
+	combinedFx: { file: '5-combined/fixtures/combined.fixture.ts', start: 34, lines: [
+		"loginPage: async ({ page }, use) => {",
+		"  const loginPage = new LoginPage(page);",
+		"  await loginPage.navigate();",
+		"  await use(loginPage);",
+		"},",
+	]},
+	pom: { file: '1-page-object-model/page-objects/LoginPage.ts', numbered: [
+		[14, "constructor(private readonly page: Page) {"],
+		[15, "  this.usernameInput = page.locator('#username');"],
+		[16, "  this.passwordInput = page.locator('#password');"],
+		[17, "  this.signInButton = page.getByRole('button', { name: 'Sign in' });"],
+		[18, "  this.errorMessage = page.locator('#login-error');"],
+		[19, "}"],
+		[20, ""],
+		[21, "async navigate(): Promise<void> {"],
+		[22, "  await this.page.goto(pathToFileURL(resolve(__dirname, '../../../pages/login.html')).href);"],
+		[23, "}"],
+		[24, ""],
+		[25, "async login(username: string, password: string): Promise<void> {"],
+		[26, "  await this.usernameInput.fill(username);"],
+		[27, "  await this.passwordInput.fill(password);"],
+		[28, "  await this.signInButton.click();"],
+		[29, "}"],
+	]},
+	specCombined: { file: '5-combined/tests/tasks.spec.ts', start: 23, lines: [
+		"test('signs in with valid credentials', async ({ loginPage, page }) => {",
+		"  // [Factory] A fresh user object with the valid demo credentials.",
+		"  const user = buildTestUser();",
+		"",
+		"  // [POM] One method hides the three form steps.",
+		"  await loginPage.login(user.username, user.password);",
+		"",
+		"  // The heading comes from the test data, so the expectation follows the user.",
+		"  await expect(welcomeHeading(page)).toHaveText(`Hi, ${user.displayName}!`);",
+		"  // [Helper] A single check on the tasks page: a plain function is enough here.",
+		"  await expect(taskCounter(page)).toHaveText('No tasks yet.');",
+		"});",
+	]},
+};
+
+// ===================================================================================
+// 3. FLOWS: each step = phase, explanation, node states, animated arrows, code, lifecycle
+//    Node states: planned | unused | setup | alive | reused | body | teardown | closed | done
+//    `setup` and `teardown` automatically become `alive` / `closed` on the next step.
+// ===================================================================================
+const BUILTIN_STEPS = (n) => [
+	{ phase: 'setup', title: 'context: a fresh, isolated browser context',
+		text: `Built-in test fixture. Every test gets a <b>new</b> context: empty cookies, localStorage and sessionStorage. This is why tests never see each other's data.`,
+		set: { context: 'setup' }, edges: [['browser>context']], code: ['builtin', [6, 7, 8]],
+		stack: ['context'] },
+	{ phase: 'setup', title: 'page: a new tab in that context',
+		text: `Built-in test fixture. It depends on <code>context</code>. Every fixture below that asks for <code>{ page }</code> receives <b>this same object</b>; Playwright creates each fixture once per test.`,
+		set: { page: 'setup' }, edges: [['context>page']], code: ['builtin', [11, 12]],
+		stack: ['context', 'page'] },
+	{ phase: 'setup', title: 'failOnPageErrors: auto fixture starts first',
+		text: `Nobody asked for it, but it is <b>auto</b>, so it always runs, right after its dependency <code>page</code> and before the fixtures the test requested. It attaches the error listener, then <b>pauses</b> at <code>await use()</code>.`,
+		set: { errors: 'setup' }, edges: [['page>errors'], ['errors>test', 'auto']], code: ['errors', [21, 22, 24]],
+		stack: ['context', 'page', 'errors'] },
+];
+
+const FLOWS = [
+	{
+		id: 'guest', name: 'Flow 1 · guestPage', hint: 'folder 3 · first test in a worker',
+		edges: ['browser>context', 'context>page', 'page>errors', 'page>guestPage', 'appUrls>guestPage', 'errors>test', 'guestPage>test'],
+		steps: [
+			{ phase: 'plan', title: 'Playwright reads the test arguments',
+				text: `The test asks only for <code>{ guestPage }</code>. Before running anything, Playwright walks the dependencies backwards: <code>guestPage</code> needs <code>page</code> and <code>appUrls</code>; <code>page</code> needs <code>context</code>; <code>context</code> needs <code>browser</code>. The <b>auto</b> fixture <code>failOnPageErrors</code> is always added. <code>seed</code>, <code>signedInPage</code> and the folder 5 fixtures are <b>not needed, so they are never created</b>.`,
+				set: { test: 'planned', guestPage: 'planned', page: 'planned', context: 'planned', browser: 'planned', appUrls: 'planned', errors: 'planned',
+					seed: 'unused', signedInPage: 'unused', tasks: 'unused', loginPage: 'unused', LoginPage: 'unused' },
+				edges: [['guestPage>test', 'resolve', true], ['page>guestPage', 'resolve', true], ['appUrls>guestPage', 'resolve', true], ['context>page', 'resolve', true], ['browser>context', 'resolve', true], ['errors>test', 'resolve', true]],
+				code: ['specGuest', [9]], stack: [], workers: [] },
+			{ phase: 'worker', title: 'browser: launched once for this worker',
+				text: `This is the <b>first test</b> in this worker process, so the worker-scoped <code>browser</code> fixture launches Chrome or Firefox (depending on the project). Later tests in the same worker reuse it.`,
+				set: { browser: 'setup' }, edges: [], code: ['builtin', [1, 2, 3]], stack: [], workers: ['browser'] },
+			...BUILTIN_STEPS(),
+			{ phase: 'worker', title: 'appUrls: worker fixture, built on first use',
+				text: `<code>guestPage</code> needs <code>appUrls</code>. It is worker-scoped and this worker has not built it yet, so it is created now, <b>once</b>. Every later test in this worker gets the same object without running this code again.`,
+				set: { appUrls: 'setup' }, edges: [], code: ['app', [27, 29, 30]], stack: ['context', 'page', 'errors'], workers: ['browser', 'appUrls'] },
+			{ phase: 'setup', title: 'guestPage: navigate, then hand over the page',
+				text: `Runs with <code>page</code> and <code>appUrls</code> as inputs. It opens the sign-in page, then <code>await use(page)</code> passes the <b>same tab</b> to the test and pauses here until the test is finished.`,
+				set: { guestPage: 'setup' }, edges: [['page>guestPage'], ['appUrls>guestPage'], ['guestPage>test']], code: ['auth', [25, 26, 27]],
+				stack: ['context', 'page', 'errors', 'guestPage'] },
+			{ phase: 'body', title: 'Test body: fill the form and click',
+				text: `Now the test function runs. Every call goes through <code>guestPage</code>, which is the built-in <code>page</code> under a different name. All fixtures in the stack are still paused at <code>await use()</code>.`,
+				set: { test: 'body' }, edges: [['guestPage>test', 'call', true], ['page>guestPage', 'call', true]], code: ['specGuest', [10, 11, 12]] },
+			{ phase: 'body', title: 'Test body: assertions',
+				text: `<code>expect(...)</code> retries until the heading and counter match. If an assertion fails, the test stops here, but <b>teardown still runs</b>.`,
+				set: { test: 'body' }, edges: [['guestPage>test', 'call', true]], code: ['specGuest', [14, 15]] },
+			{ phase: 'teardown', title: 'guestPage resumes after use(): nothing to clean',
+				text: `The test is finished, so Playwright resumes fixtures in <b>reverse order</b>. <code>guestPage</code> was set up last, so it goes first. There is no code after <code>use(page)</code>, so it simply ends.`,
+				set: { test: 'done', guestPage: 'teardown' }, edges: [], code: ['auth', [27, 28]], stack: ['context', 'page', 'errors'] },
+			{ phase: 'teardown', title: 'failOnPageErrors resumes: check for errors',
+				text: `The code after <code>await use()</code> runs now. If the page threw a JavaScript error at any moment, during setup <b>or</b> the test, this <code>expect</code> fails the test.`,
+				set: { errors: 'teardown' }, edges: [], code: ['errors', [24, 26, 27]], stack: ['context', 'page'] },
+			{ phase: 'teardown', title: 'page and context close',
+				text: `The built-ins tear down last. Closing the context deletes its cookies and storage. The next test starts clean.`,
+				set: { page: 'teardown', context: 'teardown' }, edges: [], code: ['builtin', [8, 9]], stack: [] },
+			{ phase: 'done', title: 'Worker fixtures stay alive',
+				text: `<code>browser</code> and <code>appUrls</code> are <b>not</b> torn down: they belong to the worker, not the test. They close only when the worker process exits after its last test. Compare with Flow 2, which runs later in the same worker.`,
+				set: { browser: 'reused', appUrls: 'reused' }, edges: [], code: ['app', [30]] },
+		],
+	},
+	{
+		id: 'signed', name: 'Flow 2 · signedInPage + seed', hint: 'folder 3 · later test, test.use()',
+		edges: ['browser>context', 'context>page', 'page>errors', 'page>signedInPage', 'appUrls>signedInPage', 'seed>signedInPage', 'errors>test', 'signedInPage>test'],
+		steps: [
+			{ phase: 'plan', title: 'Playwright reads the test arguments and test.use()',
+				text: `The test asks for <code>{ signedInPage }</code>, which needs <code>page</code>, <code>appUrls</code> and <code>seed</code>. The surrounding <code>describe</code> calls <code>test.use({ seed: ... })</code>, so <code>seed</code> gets <b>two tasks</b> instead of its default <code>{ tasks: [] }</code>. <code>guestPage</code> and the folder 5 fixtures are not needed.`,
+				set: { test: 'planned', signedInPage: 'planned', page: 'planned', context: 'planned', browser: 'planned', appUrls: 'planned', seed: 'planned', errors: 'planned',
+					guestPage: 'unused', tasks: 'unused', loginPage: 'unused', LoginPage: 'unused' },
+				edges: [['signedInPage>test', 'resolve', true], ['page>signedInPage', 'resolve', true], ['appUrls>signedInPage', 'resolve', true], ['seed>signedInPage', 'resolve', true], ['context>page', 'resolve', true], ['browser>context', 'resolve', true], ['errors>test', 'resolve', true]],
+				code: ['specDelete', [38, 39, 40, 41, 42, 43, 44, 45, 59]], stack: [], workers: ['browser', 'appUrls'] },
+			{ phase: 'worker', title: 'browser and appUrls: reused, no setup',
+				text: `An earlier test in this worker (Flow 1) already created them. Worker fixtures are <b>shared</b>: no browser launch, and the <code>appUrls</code> function does not run again. This is what makes worker scope fast.`,
+				set: { browser: 'reused', appUrls: 'reused' }, edges: [], code: ['app', [30]] },
+			...BUILTIN_STEPS(),
+			{ phase: 'setup', title: 'seed: an option fixture, value from test.use()',
+				text: `An option fixture does no work; it only holds a value. The default in <code>data.fixture.ts</code> is <code>{ tasks: [] }</code>, but this <code>describe</code> overrides it. The spec says <b>what</b> data it needs, not <b>how</b> it gets into the app.`,
+				set: { seed: 'setup' }, edges: [], code: ['specDelete', [38, 39, 40, 41, 42, 43, 44, 45]], stack: ['context', 'page', 'errors', 'seed'] },
+			{ phase: 'setup', title: 'signedInPage: put the session and tasks into storage',
+				text: `Runs with <code>page</code>, <code>appUrls</code> and <code>seed</code> as inputs. It opens the app's origin and writes the user and <code>seed.tasks</code> into sessionStorage. No sign-in form is used.`,
+				set: { signedInPage: 'setup' }, edges: [['page>signedInPage'], ['appUrls>signedInPage'], ['seed>signedInPage']], code: ['auth', [34, 35, 36, 37, 38]],
+				stack: ['context', 'page', 'errors', 'seed'] },
+			{ phase: 'setup', title: 'signedInPage: verify, then hand over the page',
+				text: `It opens the tasks page and checks the heading. If this fails, the test fails <b>during setup</b> and the test body never runs. Otherwise <code>await use(page)</code> passes the signed-in tab to the test and pauses.`,
+				set: { signedInPage: 'setup' }, edges: [['signedInPage>test']], code: ['auth', [39, 41, 43]],
+				stack: ['context', 'page', 'errors', 'seed', 'signedInPage'] },
+			{ phase: 'body', title: 'Test body: delete "Buy milk"',
+				text: `The test starts already signed in, with both seeded tasks on screen. It finds the row by the checkbox's exact name and clicks its delete button.`,
+				set: { test: 'body' }, edges: [['signedInPage>test', 'call', true], ['page>signedInPage', 'call', true]], code: ['specDelete', [60, 61, 62, 63]] },
+			{ phase: 'body', title: 'Test body: assertions',
+				text: `"Buy milk" is gone, and the similarly named "Buy milk and eggs" is still there.`,
+				set: { test: 'body' }, edges: [['signedInPage>test', 'call', true]], code: ['specDelete', [65, 66]] },
+			{ phase: 'teardown', title: 'signedInPage resumes after use()',
+				text: `Reverse order: last set up, first torn down. There is no code after <code>use(page)</code>; the comment explains why no cleanup is needed.`,
+				set: { test: 'done', signedInPage: 'teardown' }, edges: [], code: ['auth', [43, 44]], stack: ['context', 'page', 'errors', 'seed'] },
+			{ phase: 'teardown', title: 'seed ends',
+				text: `A plain value, nothing to clean. A <b>real</b> data fixture that created records through an API would delete them here, after its <code>use()</code>.`,
+				set: { seed: 'teardown' }, edges: [], code: ['data', [21]], stack: ['context', 'page', 'errors'] },
+			{ phase: 'teardown', title: 'failOnPageErrors resumes: check for errors',
+				text: `Same safety net as in every test: fail if the page threw a JavaScript error.`,
+				set: { errors: 'teardown' }, edges: [], code: ['errors', [24, 26, 27]], stack: ['context', 'page'] },
+			{ phase: 'teardown', title: 'page and context close: seeded storage is gone',
+				text: `Closing the context deletes the sessionStorage that <code>signedInPage</code> wrote. The next test gets its own fresh seed. <b>Isolation without any cleanup code.</b>`,
+				set: { page: 'teardown', context: 'teardown' }, edges: [], code: ['builtin', [8, 9]], stack: [] },
+			{ phase: 'done', title: 'Done; worker fixtures remain for the next test',
+				text: `<code>browser</code> and <code>appUrls</code> are still alive for the next test in this worker.`,
+				set: { browser: 'reused', appUrls: 'reused' }, edges: [], code: ['app', [30]] },
+		],
+	},
+	{
+		id: 'pom', name: 'Flow 3 · Fixture + POM', hint: 'folder 5 · loginPage + page',
+		edges: ['browser>context', 'context>page', 'page>errors', 'page>loginPage', 'LoginPage>loginPage', 'errors>test', 'loginPage>test', 'page>test'],
+		steps: [
+			{ phase: 'plan', title: 'Playwright reads the test arguments',
+				text: `The test asks for <code>{ loginPage, page }</code>. <code>loginPage</code> needs <code>page</code>, so both names will point to the <b>same tab</b>. <code>failOnPageErrors</code> still runs: folder 5 extends folder 3's <code>test</code>, so the auto fixture comes along. <code>appUrls</code>, <code>seed</code>, <code>guestPage</code>, <code>signedInPage</code> and <code>tasks</code> are not needed.`,
+				set: { test: 'planned', loginPage: 'planned', LoginPage: 'planned', page: 'planned', context: 'planned', browser: 'planned', errors: 'planned',
+					appUrls: 'unused', seed: 'unused', guestPage: 'unused', signedInPage: 'unused', tasks: 'unused' },
+				edges: [['loginPage>test', 'resolve', true], ['page>test', 'resolve', true], ['page>loginPage', 'resolve', true], ['context>page', 'resolve', true], ['browser>context', 'resolve', true], ['errors>test', 'resolve', true]],
+				code: ['specCombined', [23]], stack: [], workers: ['browser', 'appUrls'] },
+			{ phase: 'worker', title: 'browser: reused',
+				text: `Already launched by an earlier test in this worker. <code>appUrls</code> also exists in the worker, but this test does not use it.`,
+				set: { browser: 'reused' }, edges: [], code: ['builtin', [5]] },
+			...BUILTIN_STEPS(),
+			{ phase: 'setup', title: 'loginPage fixture: new LoginPage(page)',
+				text: `The fixture receives <code>page</code> and creates the page object. This replaces <code>beforeEach</code> + <code>new LoginPage(page)</code> in the POM-only tests.`,
+				set: { loginPage: 'setup' }, edges: [['page>loginPage']], code: ['combinedFx', [34, 35]], stack: ['context', 'page', 'errors'] },
+			{ phase: 'setup', title: 'POM constructor: store page, define locators',
+				text: `The class saves <code>page</code> and creates locators. Locators are <b>lazy</b>: nothing touches the browser yet. They are only descriptions of how to find elements.`,
+				set: { LoginPage: 'setup', loginPage: 'setup' }, edges: [['LoginPage>loginPage', 'creates']], code: ['pom', [14, 15, 16, 17, 18]] },
+			{ phase: 'setup', title: 'Fixture calls loginPage.navigate() → page.goto()',
+				text: `Still in setup. The fixture calls a POM method, and the POM calls the real page through <code>this.page</code>.`,
+				set: { loginPage: 'setup', LoginPage: 'alive' }, edges: [['LoginPage>loginPage', 'call', true], [null, 'call', false, 'pomToPage']], code: ['pom', [21, 22]] },
+			{ phase: 'setup', title: 'await use(loginPage): hand the object to the test',
+				text: `The test receives a ready <code>LoginPage</code> instance, already on the sign-in screen. The fixture pauses here until the test is finished.`,
+				set: { loginPage: 'setup' }, edges: [['loginPage>test']], code: ['combinedFx', [36, 37]], stack: ['context', 'page', 'errors', 'loginPage'] },
+			{ phase: 'body', title: 'Test body: build test data',
+				text: `<code>buildTestUser()</code> is a plain data factory, not a fixture. It is called inside the test and returns a fresh object with valid defaults.`,
+				set: { test: 'body' }, edges: [], code: ['specCombined', [25]] },
+			{ phase: 'body', title: 'Test body: loginPage.login(...) calls the POM',
+				text: `The test calls one method on the object it received. The test does not know about selectors or form steps.`,
+				set: { test: 'body', LoginPage: 'body' }, edges: [['loginPage>test', 'call', true], [null, 'call', false, 'testToPom']], code: ['specCombined', [28]] },
+			{ phase: 'body', title: 'Inside the POM: fill, fill, click → the page',
+				text: `The POM method uses its private locators, which act on <code>this.page</code>. That is the <b>same tab</b> the built-in <code>page</code> fixture created.`,
+				set: { test: 'body', LoginPage: 'body' }, edges: [[null, 'call', false, 'pomToPage']], code: ['pom', [25, 26, 27, 28]] },
+			{ phase: 'body', title: 'Test body: assert directly on page',
+				text: `The test also asked for <code>page</code>, so it can check the tasks page with helper functions. No new tab, no new fixture: the same object Playwright created once.`,
+				set: { test: 'body', LoginPage: 'alive' }, edges: [['page>test', 'call', true]], code: ['specCombined', [31, 33]] },
+			{ phase: 'teardown', title: 'loginPage resumes after use()',
+				text: `Nothing after <code>use(loginPage)</code>. The <code>LoginPage</code> object is just discarded; page objects need no cleanup.`,
+				set: { test: 'done', loginPage: 'teardown', LoginPage: 'closed' }, edges: [], code: ['combinedFx', [37, 38]], stack: ['context', 'page', 'errors'] },
+			{ phase: 'teardown', title: 'failOnPageErrors resumes: check for errors',
+				text: `The auto fixture from folder 3 runs its check in folder 5 too.`,
+				set: { errors: 'teardown' }, edges: [], code: ['errors', [24, 26, 27]], stack: ['context', 'page'] },
+			{ phase: 'teardown', title: 'page and context close',
+				text: `The tab and context close. The next test gets a new <code>LoginPage</code> on a new page.`,
+				set: { page: 'teardown', context: 'teardown' }, edges: [], code: ['builtin', [8, 9]], stack: [] },
+			{ phase: 'done', title: 'Summary: who did what',
+				text: `<b>Fixtures</b> prepared the context, page and page object, and cleaned up. The <b>POM</b> knew how to talk to the sign-in form. The <b>test</b> only described the scenario and its assertions.`,
+				set: { browser: 'reused' }, edges: [], code: ['specCombined', [23, 28, 31]] },
+		],
+	},
+];
+
+const PHASES = {
+	plan: ['Plan', 'var(--ph-plan)'], worker: ['Worker scope', 'var(--ph-worker)'], setup: ['Test setup', 'var(--ph-setup)'],
+	body: ['Test body', 'var(--ph-body)'], teardown: ['Teardown', 'var(--ph-teardown)'], done: ['Finished', 'var(--ph-done)'],
+};
+const STATUS = {
+	planned: 'needed', unused: 'not needed', setup: 'setting up…', alive: 'waiting at use()', reused: '♻ reused',
+	body: 'running', teardown: 'tearing down…', closed: 'closed', done: '✓ passed', idle: '',
+};
+const STACK_INFO = {
+	context: ['context', 'builtin'], page: ['page', 'builtin'], errors: ['failOnPageErrors', 'auto'], guestPage: ['guestPage', 'fixture'],
+	signedInPage: ['signedInPage', 'fixture'], seed: ['seed', 'option'], loginPage: ['loginPage → LoginPage', 'demo5'],
+	browser: ['browser', 'builtin'], appUrls: ['appUrls', 'worker'],
+};
+
+// ===================================================================================
+// 4. RENDERING
+// ===================================================================================
+const $ = (id) => document.getElementById(id);
+const svgNS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => {
+	const node = document.createElementNS(svgNS, tag);
+	for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+	if (parent) parent.appendChild(node);
+	return node;
+};
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const nodeH = (n) => n.h ?? H;
+
+function edgePath(fromId, toId) {
+	const a = NODES[fromId], b = NODES[toId];
+	if (b.x >= a.x) {
+		const x1 = a.x + a.w / 2, y1 = a.y;
+		const x2 = b.x - b.w / 2 - 4;
+		const y2 = toId === 'test' ? Math.min(Math.max(a.y, TEST_TOP + 18), TEST_BOTTOM - 18) : b.y;
+		const mx = (x1 + x2) / 2;
+		return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+	}
+	const x1 = a.x - a.w / 2, x2 = b.x + b.w / 2 + 4, mx = (x1 + x2) / 2;
+	return `M${x1},${a.y} C${mx},${a.y} ${mx},${b.y} ${x2},${b.y}`;
+}
+
+const EDGE_D = {};
+function drawGraph() {
+	const edgesG = $('edges'), nodesG = $('nodes');
+	for (const [from, to, kind = 'provide', d] of EDGES) {
+		const id = `${from}>${to}`;
+		EDGE_D[id] = d ?? edgePath(from, to);
+		el('path', { d: EDGE_D[id], class: `edge ${kind}`, id: `e-${id}`, 'marker-end': 'url(#arrow)' }, edgesG);
+	}
+	for (const [id, n] of Object.entries(NODES)) {
+		const h = nodeH(n);
+		const g = el('g', { class: `node k-${n.kind} s-idle`, id: `n-${id}`, transform: `translate(${n.x},${n.y})` }, nodesG);
+		el('rect', { x: -n.w / 2, y: -h / 2, width: n.w, height: h, rx: 12 }, g);
+		if (n.kind === 'auto') {
+			el('rect', { class: 'auto-mark-bg', x: -67, y: -h / 2 - 19, width: 134, height: 18, rx: 9 }, g);
+			el('text', { class: 'badge auto-mark', y: -h / 2 - 6 }, g).textContent = n.badge;
+		} else if (n.badge) {
+			el('text', { class: 'badge', y: -h / 2 - 6 }, g).textContent = n.badge;
+		}
+		const ty = id === 'test' ? -8 : -4;
+		el('text', { class: 'title', y: ty }, g).textContent = n.label ?? id;
+		el('text', { class: 'sub', y: ty + 17 }, g).textContent = n.sub;
+		el('text', { class: 'status', y: h / 2 + 15 }, g);
+	}
+}
+
+function highlight(line) {
+	const re = /(\/\/.*$)|('(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*")|\b(await|async|const|export|import|from|new|return|private|readonly|this|void|test|expect|use)\b/g;
+	let out = '', last = 0, m;
+	while ((m = re.exec(line))) {
+		out += escapeHtml(line.slice(last, m.index));
+		const cls = m[1] ? 'tok-c' : m[2] ? 'tok-s' : 'tok-k';
+		out += `<span class="${cls}">${escapeHtml(m[0])}</span>`;
+		last = re.lastIndex;
+	}
+	return out + escapeHtml(line.slice(last));
+}
+
+function renderCode([key, hl]) {
+	const snip = CODE[key];
+	const rows = snip.numbered ?? snip.lines.map((t, i) => [snip.start + i, t]);
+	const [dir, ...rest] = snip.file.split('/').reverse();
+	$('file').innerHTML = snip.file.includes('/') ? `${escapeHtml(rest.reverse().join('/'))}/<b>${escapeHtml(dir)}</b>` : `<b>${escapeHtml(snip.file)}</b>`;
+	$('code').innerHTML = rows.map(([n, t]) =>
+		`<span class="l${hl.includes(n) ? ' hl' : ''}${n === null ? ' gap' : ''}"><span class="n">${n ?? ''}</span>${n === null ? t : highlight(t)}</span>`
+	).join('');
+	// Scroll inside the code box only; scrollIntoView would also scroll the whole page.
+	const first = $('code').querySelector('.hl');
+	if (first) $('code').scrollTop = Math.max(0, first.offsetTop - 40);
+}
+
+function chip(id, extra = '') {
+	const [label, kind] = STACK_INFO[id];
+	const note = { worker: 'worker scope', builtin: 'built-in', auto: 'auto', option: 'option', fixture: 'auth.fixture.ts', demo5: 'combined.fixture.ts' }[kind];
+	return `<div class="chip k-${kind} ${extra}"><span>${escapeHtml(label)}</span><small>${note}</small></div>`;
+}
+
+// ===================================================================================
+// 5. STATE MACHINE: replay steps 0..i so "back" and jumping always produce the right state
+// ===================================================================================
+let flow = FLOWS[0], index = 0, playing = false, timer = null, prevStack = [];
+const speed = () => Number($('speed').value);
+
+function stateAt(i) {
+	const nodes = Object.fromEntries(Object.keys(NODES).map((k) => [k, 'idle']));
+	let stack = [], workers = [];
+	for (let s = 0; s <= i; s++) {
+		for (const k in nodes) {
+			if (nodes[k] === 'setup') nodes[k] = 'alive';
+			if (nodes[k] === 'teardown') nodes[k] = 'closed';
+			if (nodes[k] === 'body' && k !== 'test') nodes[k] = 'alive';
+		}
+		const step = flow.steps[s];
+		Object.assign(nodes, step.set);
+		if (step.stack) stack = step.stack;
+		if (step.workers) workers = step.workers;
+		if (step.set.browser && !workers.includes('browser')) workers = [...workers, 'browser'];
+	}
+	return { nodes, stack, workers };
+}
+
+let animToken = 0;
+function animateEdges(specs) {
+	const g = $('anims');
+	g.innerHTML = '';
+	const token = ++animToken;
+	const dur = 900 / speed();
+	specs.forEach(([edgeId, kind = 'provide', reverse = false, temp], i) => {
+		const d = temp ? TEMP[temp] : EDGE_D[edgeId];
+		const path = el('path', { d, class: `anim ${kind}` }, g);
+		if (kind === 'call') path.setAttribute(reverse ? 'marker-start' : 'marker-end', 'url(#arrow-call)');
+		const len = path.getTotalLength();
+		path.style.strokeDasharray = `${len} ${len}`;
+		path.style.strokeDashoffset = reverse ? -len : len;
+		path.style.opacity = 0;
+		const dot = el('circle', { r: 6, class: `dot anim ${kind}`, fill: 'currentColor', opacity: 0 }, g);
+		const delay = i * dur * 0.55;
+		const start = performance.now() + delay;
+		const tick = (now) => {
+			if (token !== animToken) return;
+			const t = Math.min(1, Math.max(0, (now - start) / dur));
+			if (now >= start) {
+				path.style.opacity = 1;
+				dot.setAttribute('opacity', t < 1 ? 1 : 0);
+				const eased = 1 - Math.pow(1 - t, 3);
+				path.style.strokeDashoffset = (reverse ? -1 : 1) * len * (1 - eased);
+				const p = path.getPointAtLength(reverse ? len * (1 - eased) : len * eased);
+				dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+			}
+			if (t < 1) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+	return specs.length ? dur * (1 + 0.55 * (specs.length - 1)) : 0;
+}
+
+function render() {
+	const step = flow.steps[index];
+	const { nodes, stack, workers } = stateAt(index);
+
+	for (const [id, state] of Object.entries(nodes)) {
+		const g = $(`n-${id}`);
+		g.setAttribute('class', `node k-${NODES[id].kind} s-${state}`);
+		g.querySelector('.status').textContent = STATUS[state] ?? '';
+	}
+	for (const [from, to] of EDGES) {
+		const id = `${from}>${to}`;
+		$(`e-${id}`).classList.toggle('in-flow', flow.edges.includes(id));
+	}
+
+	const [phaseName, phaseColor] = PHASES[step.phase];
+	$('now').innerHTML = `<h2>What happens now</h2><span class="phase" style="background:${phaseColor}">${phaseName}</span>
+		<div class="text"><h3>${index + 1}. ${step.title}</h3><p>${step.text}</p></div>`;
+	renderCode(step.code);
+
+	const leaving = prevStack.filter((x) => !stack.includes(x));
+	$('stack').innerHTML = stack.length || leaving.length
+		? stack.map((id) => chip(id, prevStack.includes(id) ? 'kept' : '')).join('') + leaving.map((id) => chip(id, 'leaving')).join('')
+		: '<span class="empty">empty: no test fixtures are alive</span>';
+	$('stack').querySelectorAll('.kept').forEach((c) => (c.style.animation = 'none'));
+	prevStack = stack;
+	$('workers').innerHTML = workers.length ? workers.map((id) => chip(id)).join('') : '<span class="empty">none yet</span>';
+
+	$('counter').textContent = `${index + 1} / ${flow.steps.length}`;
+	[...$('progress').children].forEach((d, i) => d.className = i < index ? 'past' : i === index ? 'current' : '');
+	[...$('timeline').children].forEach((li, i) => li.className = i < index ? 'past' : i === index ? 'current' : '');
+	const li = $('timeline').children[index];
+	$('timeline').scrollTop = Math.max(0, li.offsetTop - $('timeline').clientHeight / 2);
+
+	const animTime = animateEdges(step.edges);
+	return animTime;
+}
+
+function buildFlowUi() {
+	$('progress').innerHTML = flow.steps.map((s) => `<div style="background:${PHASES[s.phase][1]}" title="${PHASES[s.phase][0]}"></div>`).join('');
+	[...$('progress').children].forEach((d, i) => d.onclick = () => go(i));
+	$('timeline').innerHTML = flow.steps.map((s, i) =>
+		`<li><span class="num">${i + 1}</span><span class="pd" style="background:${PHASES[s.phase][1]}"></span><span>${s.title}</span></li>`).join('');
+	[...$('timeline').children].forEach((li, i) => li.onclick = () => go(i));
+	document.querySelectorAll('.flow-btn').forEach((b) => b.classList.toggle('active', b.dataset.id === flow.id));
+}
+
+function selectFlow(i) {
+	stop();
+	flow = FLOWS[i]; index = 0; prevStack = [];
+	buildFlowUi(); render();
+}
+function go(i) { stop(); index = Math.max(0, Math.min(flow.steps.length - 1, i)); render(); }
+
+function schedule(animTime) {
+	clearTimeout(timer);
+	if (!playing) return;
+	timer = setTimeout(() => {
+		if (index >= flow.steps.length - 1) return stop();
+		index++;
+		schedule(render());
+	}, Math.max(animTime + 900 / speed(), 2600 / speed()));
+}
+function play() {
+	if (index >= flow.steps.length - 1) { index = 0; prevStack = []; }
+	playing = true; $('play').textContent = '⏸ Pause';
+	schedule(render());
+}
+function stop() { playing = false; clearTimeout(timer); $('play').textContent = '▶ Play'; }
+
+// ===================================================================================
+// 6. WIRING
+// ===================================================================================
+$('flows').innerHTML = FLOWS.map((f, i) => `<button class="flow-btn" data-id="${f.id}" data-i="${i}">${f.name}<small>${f.hint}</small></button>`).join('');
+document.querySelectorAll('.flow-btn').forEach((b) => b.onclick = () => selectFlow(Number(b.dataset.i)));
+$('play').onclick = () => (playing ? stop() : play());
+$('next').onclick = () => go(index + 1);
+$('prev').onclick = () => go(index - 1);
+$('reset').onclick = () => { prevStack = []; go(0); };
+document.addEventListener('keydown', (e) => {
+	if (e.target.tagName === 'SELECT') return;
+	// Let Space/Enter toggle the focused intro panel instead of starting the animation.
+	if (e.target.tagName === 'SUMMARY' && (e.key === ' ' || e.key === 'Enter')) return;
+	if (e.key === 'i' || e.key === 'I') { $('intro').open = !$('intro').open; return; }
+	if (e.key === 'ArrowRight') go(index + 1);
+	else if (e.key === 'ArrowLeft') go(index - 1);
+	else if (e.key === 'Home') { prevStack = []; go(0); }
+	else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
+	else if (['1', '2', '3'].includes(e.key)) selectFlow(Number(e.key) - 1);
+});
+
+drawGraph();
+selectFlow(0);
+</script>
+</body>
+</html>

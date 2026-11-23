@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>My tasks | TaskBoard</title>
+	<link rel="stylesheet" href="../../02-playwright/pages/styles.css">
+	<style>
+		main { max-width: 560px; }
+		#task-list { list-style: none; padding: 0; }
+		#task-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+		#task-list li.done label { text-decoration: line-through; opacity: 0.6; }
+	</style>
+</head>
+<body>
+	<header class="site-header">
+		<span class="brand">TaskBoard.</span>
+		<button id="logout-button" type="button">Sign out</button>
+	</header>
+	<main>
+		<h1 id="welcome"></h1>
+		<form id="new-task-form" class="panel">
+			<label for="new-task">New task</label>
+			<input id="new-task" name="new-task" placeholder="What needs to be done?">
+			<div class="actions"><button type="submit">Add task</button></div>
+		</form>
+		<section class="panel" aria-labelledby="list-heading">
+			<h2 id="list-heading">My tasks</h2>
+			<ul id="task-list" aria-labelledby="list-heading"></ul>
+			<p id="counter" role="status"></p>
+		</section>
+	</main>
+	<footer>TaskBoard / Workshop demo app. Data lives only in this browser tab.</footer>
+	<script>
+		// These keys hold demo-only state. Each Playwright test gets a new context and fresh storage.
+		const USER_KEY = 'taskboard-user';
+		const TASKS_KEY = 'taskboard-tasks';
+
+		const user = sessionStorage.getItem(USER_KEY);
+		if (!user) {
+			// Guard the protected page before initializing the task UI.
+			window.location.replace('login.html');
+		} else {
+			const list = document.querySelector('#task-list');
+			const counter = document.querySelector('#counter');
+			const input = document.querySelector('#new-task');
+
+			document.querySelector('#welcome').textContent = `Hi, ${user}!`;
+
+			function loadTasks() {
+				return JSON.parse(sessionStorage.getItem(TASKS_KEY) ?? '[]');
+			}
+
+			function saveTasks(tasks) {
+				sessionStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+				render();
+			}
+
+			function render() {
+				const tasks = loadTasks();
+				list.replaceChildren(...tasks.map((task, index) => {
+					const item = document.createElement('li');
+					item.className = task.done ? 'done' : '';
+
+					const label = document.createElement('label');
+					label.className = 'choice';
+					const checkbox = document.createElement('input');
+					checkbox.type = 'checkbox';
+					checkbox.checked = task.done;
+					checkbox.addEventListener('change', () => {
+						tasks[index].done = checkbox.checked;
+						saveTasks(tasks);
+					});
+					label.append(checkbox, ` ${task.title}`);
+
+					const remove = document.createElement('button');
+					remove.type = 'button';
+					remove.textContent = 'Delete';
+					remove.setAttribute('aria-label', `Delete ${task.title}`);
+					remove.addEventListener('click', () => {
+						tasks.splice(index, 1);
+						saveTasks(tasks);
+					});
+
+					item.append(label, remove);
+					return item;
+				}));
+
+				const left = tasks.filter((task) => !task.done).length;
+				counter.textContent = tasks.length === 0
+					? 'No tasks yet.'
+					: `${left} ${left === 1 ? 'task' : 'tasks'} left`;
+			}
+
+			document.querySelector('#new-task-form').addEventListener('submit', (event) => {
+				event.preventDefault();
+				const title = input.value.trim();
+				if (!title) return;
+				saveTasks([...loadTasks(), { title, done: false }]);
+				input.value = '';
+			});
+
+			document.querySelector('#logout-button').addEventListener('click', () => {
+				// Remove only this app's values instead of clearing unrelated session data.
+				sessionStorage.removeItem(USER_KEY);
+				sessionStorage.removeItem(TASKS_KEY);
+				window.location.replace('login.html');
+			});
+
+			render();
+		}
+	</script>
+</body>
+</html>
